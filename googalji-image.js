@@ -11,21 +11,26 @@ const CORS_HEADERS = {
 };
 
 // Googalji — Indian man, late 60s to early 70s
-// Lean, slightly hunched. Reading glasses, thick-framed, slightly crooked.
-// Simple white kurta, occasional light shawl.
+// Charming elderly Indian astrologer — present-day traditional, ultra-authentic.
+// Modi-style high-collar kurta, pure white, immaculate.
+// Rudraksha mala around neck. Astrological rings on fingers — multiple, gold and silver.
+// Red tika on forehead. Charming, glowing face — calm authority, not austere.
+// Thick-framed glasses, slightly crooked. Warm aesthetic background.
 // Old wooden desk, worn notebooks, loose papers.
-// Single lamp, warm yellow light.
+// Single lamp, warm golden light.
 // Small steel glass of chai always present. Sometimes held. Never sipped on camera.
-const CHARACTER_BASE_PROMPT = `An elderly Indian man, late 60s to early 70s, lean and slightly hunched, 
-the posture of someone who has spent decades bent over notebooks, 
-Indian skin tone, deep facial lines from decades of quiet study, 
-thick-framed reading glasses slightly crooked on his nose, 
-simple white kurta, occasionally a light cotton shawl over his shoulders, 
-old wooden desk or low table in background with worn notebooks and loose papers stacked around him, 
-a single warm yellow lamp providing amber light from the side, 
-expression patient and slightly amused, he already knows, 
-photorealistic semi stylized illustration, sharp focus on face and upper body, 
-cinematic warm amber lighting, highly detailed, 9:16 vertical format`;
+const CHARACTER_BASE_PROMPT = `An elderly Indian man, late 60s to early 70s, upright dignified posture,
+charming glowing face with deep laugh lines, calm and knowing expression,
+warm golden-brown Indian skin tone, thick-framed reading glasses slightly crooked on his nose,
+wearing an immaculate white Modi-style high-collar kurta,
+rudraksha mala beads around his neck, multiple astrological rings on fingers in gold and silver,
+red kumkum tika on forehead, subtle holy thread visible,
+old wooden desk in background with worn notebooks worn leather-bound books and brass items stacked around him,
+warm golden oil lamp light from the side casting a sacred glow on his face,
+aesthetically rich background — deep crimson and amber tones, ancient Indian study room feel,
+expression patient and slightly amused, he already knows,
+ultra-detailed photorealistic portrait, sharp focus on face and upper body,
+cinematic warm golden lighting, 8K detail, 9:16 vertical format`;
 
 const PROP_ADDITIONS = {
   chai: ", a small steel glass of chai held loosely in one hand, faint steam rising",
@@ -109,7 +114,7 @@ async function initiateImageGeneration(leonardoKey, prompt, initImageId) {
   const body = {
     modelId: LEONARDO_MODEL_ID,
     prompt: prompt,
-    negative_prompt: "cartoon, anime, childish, ugly, deformed, blurry, low quality, modern clothing, logos, branded, smiling broadly, angry, surprised, young, female, western, different person, different face, phone, computer, mobile, laptop, modern objects, clean desk, bright office",
+    negative_prompt: "cartoon, anime, childish, ugly, deformed, blurry, low quality, casual clothing, t-shirt, jeans, logos, branded clothing, smiling broadly, angry, surprised, young, female, western clothing, different person, different face, phone, computer, mobile, laptop, modern objects, clean desk, bright office, bald, no glasses, no tika, no rudraksha",
     num_images: 1,
     width: 576,
     height: 1024,
