@@ -1,0 +1,15 @@
+name = "googalji-council"
+main = "googalji-council.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+# No cron here — orchestration worker drives the schedule
+
+[vars]
+WORKER_DOMAIN = "googalji-council.YOUR_SUBDOMAIN.workers.dev"
+
+# Secrets — set via: wrangler secret put SECRET_NAME
+# COUNCIL_SECRET
+# OPENAI_API_KEY
+# SUPABASE_URL
+# SUPABASE_KEY
