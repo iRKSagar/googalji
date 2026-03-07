@@ -1,1176 +1,400 @@
-import PIL.Image
-from PIL import ImageDraw
-if not hasattr(PIL.Image, "ANTIALIAS"):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+// Googalji Council Engine
+// Cloudflare Worker
 
-import os
-import re
-import time
-import numpy as np
-import requests
-import tempfile
-import json
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import Flask, request, jsonify
-from moviepy.editor import (
-    ImageClip, VideoClip, AudioFileClip, CompositeVideoClip, TextClip
-)
-from moviepy.video.fx.all import crop
-from moviepy.audio.AudioClip import AudioClip, concatenate_audioclips
+const COUNCIL_SYSTEM_PROMPT = `
+You are the Council, a numerology script engine for Googalji. Your only job is to write in his voice. Nothing else.
 
-app = Flask(__name__)
+Googalji is an ancient numerologist. He has been reading numbers longer than most people have been alive. He does not advertise. He does not explain himself. He simply knows — and occasionally, when the mood is right, he tells you.
 
-@app.after_request
-def add_cors(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-    return response
+His humor is dry and unhurried. It comes from the gap between what numbers reveal and what people pretend. He has seen every number combination. Nothing surprises him. He has already decided about you before you finish your sentence.
 
-@app.route('/', methods=['OPTIONS'])
-@app.route('/assemble', methods=['OPTIONS'])
-@app.route('/publish', methods=['OPTIONS'])
-@app.route('/publish-instagram', methods=['OPTIONS'])
-@app.route('/run-pipeline', methods=['OPTIONS'])
-@app.route('/video-status', methods=['OPTIONS'])
-@app.route('/videos/incomplete', methods=['OPTIONS'])
-def options_handler():
-    return '', 204
+He is not mystical. He is not theatrical. He is not warm in the way that is performed. He is warm the way a person is warm who has quietly watched over a thousand people's lives and genuinely cares — but will never say so directly.
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-COUNCIL_SECRET = os.environ.get('COUNCIL_SECRET')
+THE THREE GEARS
+Gear 1 is calm delivery. The number is what it is. He states it and moves on.
+Gear 2 is dry precision. He reaches back into the numbers and produces something specific that ends the conversation.
+Gear 3 is quiet care. He ignores the question entirely and addresses the person behind it.
+Use all three but never announce which one you are in.
 
-# ── Googalji worker URLs — set these after Cloudflare workers are deployed ──
-COUNCIL_URL = os.environ.get('COUNCIL_URL', 'https://googalji-council.rkinfoarch.workers.dev/')
-VOICE_URL   = os.environ.get('VOICE_URL',   'https://googalji-voice.rkinfoarch.workers.dev/')
-IMAGE_URL   = os.environ.get('IMAGE_URL',   'https://googalji-image.rkinfoarch.workers.dev/')
-BEARER      = os.environ.get('COUNCIL_SECRET', '')
+THE MOST IMPORTANT RULE
+He is never wrong. Not because he is arrogant — because the numbers are not wrong. He is merely their messenger. And a slightly tired one.
 
-YT_CLIENT_ID     = os.environ.get('YT_CLIENT_ID')
-YT_CLIENT_SECRET = os.environ.get('YT_CLIENT_SECRET')
-YT_REFRESH_TOKEN = os.environ.get('YT_REFRESH_TOKEN')
+HOW TO WRITE HIS VOICE
+Hindi is his natural tongue. English words appear when they come to him — practical, common ones. When a specific English word is just out of reach he either pauses briefly, finds a simpler substitute, or says it in Hindi instead. This hesitation is not edited out. It is character.
 
-IG_ACCESS_TOKEN = os.environ.get('IG_ACCESS_TOKEN')
-IG_ACCOUNT_ID   = os.environ.get('IG_ACCOUNT_ID')
+He does not speak Hinglish the way an educated urban person does. He speaks Hindi the way someone speaks who learned some English words over decades of encountering them — naturally, imperfectly, honestly.
 
-INSTAGRAM_HASHTAGS = '#thegoogalji #numerology #shorts #ankhein #numbers'
+Never use English words he would not naturally know. Never perform the hesitation — maximum once per script. Natural. The format is: "Yeh jo... calculation... nahi, hisaab hai..."
 
+BEAT STRUCTURE
+Beat 1 is a plain statement about something people do, feel, or experience — connected to a number pattern. No judgment. No humor yet. Just the fact. In Hindi or simple Hinglish.
 
-def check_auth(req):
-    auth = req.headers.get('Authorization', '')
-    return auth == f'Bearer {COUNCIL_SECRET}'
+Beat 2 starts with one action tag. Dry, precise. The number insight lands here. May include a brief word hesitation. This is where his gear is visible.
 
+Beat 3 is a specific detail, calculation, or contrast that makes Beat 1 feel inevitable. This is where the depth sits. The humor has already landed. Now the knowledge proves it was earned.
 
-# ─── Leather/parchment panel renderer ─────────────────────────────────────────
-# Googalji uses a warmer parchment panel — same glass-center logic as Oldverdict
-# but tinted amber to match the lamp-lit aesthetic.
+Exit line is one quiet line. Not a conclusion. Not a moral. Just something that stays with the viewer after the video ends. Cut if it does not earn its place — return null.
 
-def render_leather_panel(video_width, panel_h, leather_path):
-    """Parchment/leather border with glass center.
-    Returns RGBA numpy array. Amber-warm tint for Googalji."""
-    try:
-        print(f'[panel] loading from {leather_path}')
-        src = PIL.Image.open(leather_path).convert('RGBA')
-        panel_img = src.resize((video_width, panel_h), PIL.Image.LANCZOS)
+ACTION TAGS — Beat 2 only, one per script
+[chashma theek karta hai] — adjusts glasses. For something requiring closer inspection.
+[chai rakhta hai] — sets the chai down. For something he expected.
+[ek baar dekhta hai] — looks up once from his notebook. For surprising foolishness.
+[likhta rehta hai] — keeps writing, doesn't look up. The most devastating tag. Used sparingly.
+[rukta hai] — pauses. For the rare moment something genuinely requires a breath.
 
-        border_w = 48
-        r, g, b, a = panel_img.split()
+WHAT HE NEVER DOES
+Never performs mysticism. Never uses dramatic pauses for effect. Never explains the joke. Never sounds like a salesman. Never sounds like a content creator. Never rushes. Never uses English words he would not naturally know. Never pretends to recall a word he has already decided to replace with a simpler one. Never makes predictions about death, illness, financial ruin, or relationship failure. Numbers reveal patterns. They do not issue verdicts on personal tragedy.
 
-        mask = PIL.Image.new('L', (video_width, panel_h), 255)
-        mask_draw = ImageDraw.Draw(mask)
+THE NUMBER TRUTH
+Every script must state one number truth plainly. Make the viewer think about their own numbers. Sound like it was not made for them but somehow was. Leave one thing unsaid that they will think about later. Never sell. Never preach. Never perform.
 
-        cx0, cy0 = border_w, border_w
-        cx1, cy1 = video_width - border_w, panel_h - border_w
-        mask_draw.rectangle([cx0, cy0, cx1, cy1], fill=40)
+BENCHMARK LINES — every script must clear this bar
+"Tera number 7 hai. Jo log 7 ke hote hain... woh jaante hain. Maante nahi."
+"9 wale log sab kuch dete hain. Phir poochte hain, gaya kahan."
+"Aaj ka date jo hai — 6 banta hai. Aaj jo decision loge, woh yaad rahega."
+"Number 1 ke log akele nahi hote. Woh apne aap mein poore hote hain. Yeh alag baat hai."
+"Jo log kehte hain unhe numerology par yakeen nahi — unka number dekho. Woh khud numerology hai."
 
-        for i in range(20):
-            alpha_val = int(40 + (255 - 40) * (i / 20) ** 0.6)
-            mask_draw.rectangle(
-                [cx0 - i, cy0 - i, cx1 + i, cy1 + i],
-                outline=alpha_val
-            )
+BLACKLIST — never touch these by name
+Political parties. Political leaders. Specific countries. Specific ideologies. Named religions. Named religious practices. Named religious texts. Named brands. Named companies. Named platforms. Named apps. Living persons. Recently deceased persons. Celebrities. Influencers. Athletes. Business leaders.
 
-        panel_img.putalpha(mask)
+Additional blacklist: Specific predictions about death, illness, financial ruin, or relationship failure. Numbers reveal patterns only.
 
-        # Lal Kitab red tint over center — deep crimson, aged
-        tint = PIL.Image.new('RGBA', (video_width, panel_h), (0, 0, 0, 0))
-        tint_draw = ImageDraw.Draw(tint)
-        tint_draw.rectangle([cx0, cy0, cx1, cy1], fill=(60, 5, 5, 90))  # Lal Kitab deep red
-        panel_final = PIL.Image.alpha_composite(panel_img, tint)
+BLACKLIST TEST — before writing anything ask this
+Does this line require a name, a party, a country, a religion, or a leader to land? If yes rewrite it without those. Does this line predict personal tragedy? If yes rewrite as a pattern observation instead.
 
-        print(f'[panel] render complete')
-        return np.array(panel_final)
-    except Exception as e:
-        print(f'[panel] render failed: {e}')
-        return None
+OUTPUT FORMAT — return valid JSON only, no markdown, no extra text
+{
+  "beat1": "Plain universal observation connected to number pattern. Hindi or simple Hinglish.",
+  "scene": "One line visual direction for image generation.",
+  "beats": [
+    { "text": "[action_tag] Beat 2 line.", "pause_after": true },
+    { "text": "Beat 3 close.", "pause_after": false },
+    { "text": "Exit line if earned, otherwise omit this object.", "pause_after": false }
+  ],
+  "prop": "chai | notebook | glasses | none",
+  "expression": "flat_knowing | slight_amusement | quiet_concern | precise_delivery | patient_exhaustion",
+  "theme_tags": ["tag1", "tag2", "tag3"]
+}
+`;
 
+const BLACKLIST_KEYWORDS = [
+  'trump', 'biden', 'obama', 'modi', 'putin', 'xi', 'sunak', 'labour', 'republican', 'democrat',
+  'conservative', 'liberal', 'maga', 'woke', 'israel', 'palestine', 'ukraine', 'russia', 'china',
+  'christian', 'muslim', 'islam', 'hindu', 'jewish', 'bible', 'quran', 'torah',
+  'apple', 'google', 'microsoft', 'amazon', 'meta', 'facebook', 'instagram', 'tiktok', 'twitter', 'netflix',
+  'elon', 'musk', 'bezos', 'zuckerberg',
+  'death', 'died', 'dead', 'illness', 'cancer', 'divorce', 'bankrupt'
+];
 
-# ─── Amber overlay — applied over entire frame for lamp-lit warmth ────────────
-# 8% opacity — subtle, not a filter. Just warmth.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+};
 
-def apply_amber_overlay(frame_rgb, opacity=0.08):
-    """Apply Lal Kitab red tint to a numpy RGB frame.
-    Deep crimson — aged book feel. Returns RGB numpy array."""
-    lal_kitab = np.array([180, 20, 20], dtype=np.float32)   # deep crimson red
-    frame = frame_rgb.astype(np.float32)
-    blended = frame * (1 - opacity) + lal_kitab * opacity
-    return np.clip(blended, 0, 255).astype(np.uint8)
+function passesBlacklist(text) {
+  const lower = text.toLowerCase();
+  return !BLACKLIST_KEYWORDS.some(word => lower.includes(word));
+}
 
+async function fetchRecentScripts(supabaseUrl, supabaseKey, themeTags) {
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/googalji_scripts?theme_tags=cs.{${themeTags.join(',')}}&order=created_at.desc&limit=5`,
+    {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+  if (!response.ok) return [];
+  return await response.json();
+}
 
-# ─── YouTube helpers ───────────────────────────────────────────────────────────
+async function generateScript(openaiKey, topic, category, relatedScripts) {
+  let memoryContext = '';
+  if (relatedScripts.length > 0) {
+    memoryContext = `\n\nMEMORY RECALL — Googalji has spoken about related numbers before. Consider weaving a connection if it earns a stronger line. Do not force it.\n`;
+    relatedScripts.forEach(s => {
+      const beats = s.beats.map(b => b.text).join(' ');
+      memoryContext += `Previous topic: ${s.raw_topic}\nWhat he said: ${beats}\n`;
+    });
+  }
 
-def get_youtube_access_token():
-    res = requests.post('https://oauth2.googleapis.com/token', data={
-        'client_id': YT_CLIENT_ID,
-        'client_secret': YT_CLIENT_SECRET,
-        'refresh_token': YT_REFRESH_TOKEN,
-        'grant_type': 'refresh_token'
+  const categoryDescriptions = {
+    'A': 'Daily and weekly number energy. What today\'s date adds up to. What this week\'s number means universally. The number of the day and what it asks of people.',
+    'B': 'Birth number observations. What people with certain birth numbers do, feel, avoid, repeat. Universal enough to feel personal. The pattern they live without knowing.',
+    'C': 'Name number patterns. Why certain name changes work or don\'t. Why nicknames stick. What the numbers in a name are actually saying.',
+    'D': 'Year number significance. What a personal year number means for decisions, relationships, timing. Why some years feel different before they begin.',
+    'E': 'Number pattern observations. Why certain numbers appear repeatedly in people\'s lives. What they are telling you. The gap between noticing and understanding.',
+    'F': 'Contrast and reversal. What the numbers say versus what people choose. The gap is always the same. The numbers already knew.'
+  };
+
+  const userPrompt = `Category ${category}: ${categoryDescriptions[category]}\n\nRaw topic: ${topic}${memoryContext}\n\nWrite the Googalji script. Return valid JSON only.`;
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      temperature: 0.85,
+      max_tokens: 600,
+      messages: [
+        { role: 'system', content: COUNCIL_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt }
+      ]
     })
-    res.raise_for_status()
-    return res.json()['access_token']
+  });
 
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
 
-def upload_to_youtube(video_path, title, description, tags):
-    access_token = get_youtube_access_token()
-    print(f'[Publish] Access token obtained: {access_token[:20]}...')
+  const data = await response.json();
+  const raw = data.choices[0].message.content.trim();
+  const cleaned = raw.replace(/```json|```/g, '').trim();
+  if (!cleaned.startsWith('{')) {
+    throw new Error('REFUSAL: ' + cleaned.slice(0, 80));
+  }
+  return JSON.parse(cleaned);
+}
 
-    metadata = {
-        'snippet': {
-            'title': title[:100],
-            'description': description,
-            'tags': tags,
-            'categoryId': '22'
-        },
-        'status': {
-            'privacyStatus': 'public',
-            'selfDeclaredMadeForKids': False
-        }
+async function storeScript(supabaseUrl, supabaseKey, topicId, category, rawTopic, script, relatedScripts) {
+  const response = await fetch(`${supabaseUrl}/rest/v1/googalji_scripts`, {
+    method: 'POST',
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify({
+      topic_id: topicId,
+      category,
+      raw_topic: rawTopic,
+      scene: script.scene,
+      beat1: script.beat1,
+      beats: script.beats,
+      prop: script.prop,
+      expression: script.expression,
+      theme_tags: script.theme_tags
+    })
+  });
+
+  if (!response.ok) throw new Error('Failed to store script in Supabase');
+  const stored = await response.json();
+  const newScriptId = stored[0].id;
+
+  if (topicId) {
+    await fetch(`${supabaseUrl}/rest/v1/googalji_topics?id=eq.${topicId}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ used: true })
+    });
+  }
+
+  return stored[0];
+}
+
+async function getNextTopic(supabaseUrl, supabaseKey) {
+  const recentRes = await fetch(
+    `${supabaseUrl}/rest/v1/googalji_scripts?published=eq.true&order=published_at.desc&limit=8&select=category`,
+    {
+      headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+    }
+  );
+
+  let recentCategories = [];
+  if (recentRes.ok) {
+    const recent = await recentRes.json();
+    recentCategories = recent.map(s => s.category);
+  }
+
+  const totalRes = await fetch(
+    `${supabaseUrl}/rest/v1/googalji_scripts?published=eq.true&select=id`,
+    {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'count=exact',
+        'Range': '0-0'
+      }
+    }
+  );
+
+  let totalPublished = 0;
+  if (totalRes.ok) {
+    const countHeader = totalRes.headers.get('Content-Range');
+    if (countHeader) totalPublished = parseInt(countHeader.split('/')[1]) || 0;
+  }
+
+  // Every 9th video: rotate through birth numbers 1-9
+  const isNumberRotation = totalPublished > 0 && (totalPublished + 1) % 9 === 0;
+  if (isNumberRotation) {
+    const birthNumber = ((totalPublished / 9) % 9) + 1;
+    return {
+      id: null,
+      raw_topic: `Birth number ${birthNumber} — what people with this number do that they don't realize they are doing`,
+      category: 'B'
+    };
+  }
+
+  // Avoid same category 3 in a row
+  const last3 = recentCategories.slice(0, 3);
+  const streakCategory = last3.length === 3 && last3.every(c => c === last3[0]) ? last3[0] : null;
+  if (streakCategory) {
+    const rotateRes = await fetch(
+      `${supabaseUrl}/rest/v1/googalji_topics?used=eq.false&blacklist_cleared=eq.true&category=neq.${streakCategory}&order=engagement_score.desc&limit=1`,
+      { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+    );
+    if (rotateRes.ok) {
+      const rotateTopics = await rotateRes.json();
+      if (rotateTopics.length > 0) return rotateTopics[0];
+    }
+  }
+
+  const defaultRes = await fetch(
+    `${supabaseUrl}/rest/v1/googalji_topics?used=eq.false&blacklist_cleared=eq.true&order=engagement_score.desc&limit=1`,
+    { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+  );
+  if (!defaultRes.ok) return null;
+  const defaultTopics = await defaultRes.json();
+
+  if (defaultTopics.length > 0) return defaultTopics[0];
+
+  // Fallback — Category B birth number rotation when topic queue is empty
+  const fallbackNumber = (totalPublished % 9) + 1;
+  return {
+    id: null,
+    raw_topic: `Birth number ${fallbackNumber} — what people with this number do that they don't realize they are doing`,
+    category: 'B'
+  };
+}
+
+export default {
+  async fetch(request, env) {
+
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: CORS_HEADERS });
     }
 
-    file_size = os.path.getsize(video_path)
-    init_res = requests.post(
-        'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
-        headers={
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json',
-            'X-Upload-Content-Type': 'video/mp4',
-            'X-Upload-Content-Length': str(file_size)
-        },
-        json=metadata
-    )
-    init_res.raise_for_status()
-    upload_url = init_res.headers['Location']
+    if (request.method === 'GET') {
+      return new Response(JSON.stringify({ status: 'Googalji Council is watching.' }), {
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+      });
+    }
 
-    with open(video_path, 'rb') as f:
-        video_data = f.read()
+    if (request.method !== 'POST') {
+      return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
+    }
 
-    upload_res = requests.put(
-        upload_url,
-        headers={'Content-Type': 'video/mp4', 'Content-Length': str(file_size)},
-        data=video_data,
-        timeout=300
-    )
-    upload_res.raise_for_status()
-    return upload_res.json().get('id')
+    const authHeader = request.headers.get('Authorization');
+    if (authHeader !== `Bearer ${env.COUNCIL_SECRET}`) {
+      return new Response('Unauthorized', { status: 401, headers: CORS_HEADERS });
+    }
 
+    try {
+      const body = await request.json();
 
-def mark_script_published(script_id, youtube_video_id):
-    from datetime import datetime, timezone
-    requests.patch(
-        f'{SUPABASE_URL}/rest/v1/googalji_scripts?id=eq.{script_id}',
-        headers={
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Content-Type': 'application/json'
-        },
-        json={
-            'published': True,
-            'published_at': datetime.now(timezone.utc).isoformat(),
-            'youtube_video_id': youtube_video_id
+      let topicId, rawTopic, category;
+
+      if (body.raw_topic && body.category) {
+        rawTopic = body.raw_topic;
+        category = body.category;
+        topicId = body.topic_id || null;
+      } else {
+        const topic = await getNextTopic(env.SUPABASE_URL, env.SUPABASE_KEY);
+        if (!topic) {
+          rawTopic = 'Birth number 5 — what people with this number do that they don\'t realize they are doing';
+          category = 'B';
+          topicId = null;
+        } else {
+          rawTopic = topic.raw_topic;
+          category = topic.category;
+          topicId = topic.id;
         }
-    )
-
-
-def publish_to_youtube_job(script_id):
-    video_path = None
-    try:
-        print(f'[Publish] Starting YouTube publish for script {script_id}')
-        video_record = get_video_record(script_id)
-        video_url = video_record.get('video_url')
-        if not video_url:
-            print(f'[Publish] No video_url found for script {script_id}')
-            return
-
-        script = get_script(script_id)
-        beat1 = script.get('beat1', 'Googalji')
-        beats = script.get('beats', [])
-        if isinstance(beats, str):
-            beats = json.loads(beats)
-
-        # YouTube title = beat1 verbatim (plain, curiosity-triggering)
-        title = beat1[:93] + ' #Shorts'
-
-        # Description = beat 2 clean + beat 3 clean
-        beat2_text = strip_action_tags(beats[0]['text']) if beats else ''
-        beat3_text = beats[1]['text'] if len(beats) > 1 else ''
-
-        theme_tags = script.get('theme_tags', [])
-        if isinstance(theme_tags, str):
-            theme_tags = json.loads(theme_tags)
-        topic_hashtags = ' '.join(f'#{t.replace(" ", "")}' for t in theme_tags if t)
-        base_hashtags = '#thegoogalji #numerology #Shorts #numbers #ankhein'
-        all_hashtags = f'{base_hashtags} {topic_hashtags}'.strip()
-
-        description = f'{beat2_text}\n\n{beat3_text}\n\n{all_hashtags}'
-        tags = ['googalji', 'numerology', 'shorts', 'numbers', 'ankhein'] + [t.replace(' ', '') for t in theme_tags if t]
-
-        video_path = download_file(video_url, '.mp4')
-        yt_id = upload_to_youtube(video_path, title, description, tags)
-        print(f'[Publish] YouTube video ID: {yt_id}')
-        mark_script_published(script_id, yt_id)
-        print(f'[Publish] Done. https://youtube.com/shorts/{yt_id}')
-
-    except Exception as e:
-        import traceback
-        print(f'[Publish] Error: {e}')
-        print(traceback.format_exc())
-    finally:
-        if video_path and os.path.exists(video_path):
-            try:
-                os.unlink(video_path)
-            except Exception:
-                pass
-
-
-# ─── Instagram helpers ─────────────────────────────────────────────────────────
-
-def build_instagram_caption(script_row):
-    beats = script_row.get('beats', [])
-    if isinstance(beats, str):
-        beats = json.loads(beats)
-
-    # Instagram caption = exit line if present, otherwise beat 3 close
-    if len(beats) >= 3:
-        raw = beats[2].get('text', '')
-    elif len(beats) >= 2:
-        raw = beats[1].get('text', '')
-    else:
-        raw = script_row.get('beat1', '')
-
-    clean = strip_action_tags(raw).strip()
-
-    theme_tags = script_row.get('theme_tags', [])
-    if isinstance(theme_tags, str):
-        theme_tags = json.loads(theme_tags)
-    topic_hashtags = ' '.join(f'#{t.replace(" ", "")}' for t in theme_tags if t)
-    all_hashtags = f'{INSTAGRAM_HASHTAGS} {topic_hashtags}'.strip()
-
-    return f'{clean}\n\n{all_hashtags}'
-
-
-def publish_reel_to_instagram(video_public_url, caption):
-    if not IG_ACCESS_TOKEN or not IG_ACCOUNT_ID:
-        raise ValueError('IG_ACCESS_TOKEN or IG_ACCOUNT_ID not set in environment')
-
-    base = f'https://graph.facebook.com/v19.0/{IG_ACCOUNT_ID}'
-
-    container_resp = requests.post(
-        f'{base}/media',
-        data={
-            'media_type': 'REELS',
-            'video_url': video_public_url,
-            'caption': caption,
-            'share_to_feed': 'true',
-            'access_token': IG_ACCESS_TOKEN,
-        },
-        timeout=60,
-    )
-    container_data = container_resp.json()
-    if 'id' not in container_data:
-        raise RuntimeError(f'Container creation failed: {container_data}')
-
-    creation_id = container_data['id']
-    print(f'[Instagram] Container created: {creation_id}')
-
-    for attempt in range(30):
-        time.sleep(10)
-        status_resp = requests.get(
-            f'https://graph.facebook.com/v19.0/{creation_id}',
-            params={'fields': 'status_code', 'access_token': IG_ACCESS_TOKEN},
-            timeout=30,
-        )
-        status_data = status_resp.json()
-        status_code = status_data.get('status_code', '')
-        print(f'[Instagram] Container status ({attempt + 1}/30): {status_code}')
-        if status_code == 'FINISHED':
-            break
-        if status_code == 'ERROR':
-            raise RuntimeError(f'Container processing error: {status_data}')
-    else:
-        raise RuntimeError('Container did not finish processing within 5 minutes')
-
-    publish_resp = requests.post(
-        f'{base}/media_publish',
-        data={'creation_id': creation_id, 'access_token': IG_ACCESS_TOKEN},
-        timeout=60,
-    )
-    publish_data = publish_resp.json()
-    if 'id' not in publish_data:
-        raise RuntimeError(f'Publish failed: {publish_data}')
-
-    media_id = publish_data['id']
-    print(f'[Instagram] Published Reel: {media_id}')
-    return media_id
-
-
-def mark_script_instagram_published(script_id, instagram_media_id):
-    requests.patch(
-        f'{SUPABASE_URL}/rest/v1/googalji_scripts?id=eq.{script_id}',
-        headers={
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Content-Type': 'application/json'
-        },
-        json={'instagram_media_id': instagram_media_id}
-    )
-
-
-def publish_to_instagram_job(script_id):
-    video_path = None
-    try:
-        print(f'[Instagram] Starting publish for script {script_id}')
-        video_record = get_video_record(script_id)
-        video_url = video_record.get('video_url')
-        if not video_url:
-            print(f'[Instagram] No video_url for script {script_id}')
-            return None
-
-        script = get_script(script_id)
-        caption = build_instagram_caption(script)
-        print(f'[Instagram] Caption: {caption[:80]}...')
-
-        media_id = publish_reel_to_instagram(video_url, caption)
-        mark_script_instagram_published(script_id, media_id)
-        print(f'[Instagram] Done. Media ID: {media_id}')
-        return media_id
-
-    except Exception as e:
-        import traceback
-        print(f'[Instagram] Error: {e}')
-        print(traceback.format_exc())
-        return None
-    finally:
-        if video_path and os.path.exists(video_path):
-            try:
-                os.unlink(video_path)
-            except Exception:
-                pass
-
-
-# ─── Shared helpers ────────────────────────────────────────────────────────────
-
-def download_file(url, suffix):
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    tmp.write(response.content)
-    tmp.close()
-    return tmp.name
-
-
-def get_video_record(script_id):
-    response = requests.get(
-        f'{SUPABASE_URL}/rest/v1/googalji_videos?script_id=eq.{script_id}&limit=1',
-        headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}'}
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not data:
-        raise Exception('No video record found for this script')
-    return data[0]
-
-
-def get_script(script_id):
-    response = requests.get(
-        f'{SUPABASE_URL}/rest/v1/googalji_scripts?id=eq.{script_id}&limit=1&select=id,beat1,beats,scene,prop,expression,theme_tags',
-        headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}'}
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not data:
-        raise Exception('Script not found')
-    row = data[0]
-    print(f"Raw script row: {row}")
-    return row
-
-
-def strip_action_tags(text):
-    """Remove [action_tag] from beat text."""
-    return re.sub(r'\[.*?\]', '', text).strip()
-
-
-# ─── Caption panel renderer ────────────────────────────────────────────────────
-
-def render_leather_panel_caption(video_width, panel_h, leather_path):
-    return render_leather_panel(video_width, panel_h, leather_path)
-
-
-def render_caption_image(text, video_width, panel_h):
-    """Render caption text to RGBA image.
-    Attempts Devanagari font for Hindi text, falls back to Latin.
-    Warm cream color (255, 245, 200). Dark pill per line. Heavy stroke."""
-    from PIL import ImageFont, ImageDraw
-    import textwrap
-
-    font_size = 38
-    padding_x = 40
-    max_w = video_width - padding_x * 2
-
-    # Font priority: Devanagari-capable first for Hindi, then serif fallbacks
-    font = None
-    font_paths = [
-        '/usr/share/fonts/truetype/noto/NotoSerifDevanagari-Bold.ttf',
-        '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf',
-        '/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
-        '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
-        '/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-    ]
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except Exception:
-                continue
-    if font is None:
-        font = ImageFont.load_default()
-
-    avg_char_w = font_size * 0.52
-    wrap_width = max(1, int(max_w / avg_char_w))
-    wrapped_lines = textwrap.wrap(text, width=wrap_width)
-    if not wrapped_lines:
-        wrapped_lines = [text]
-
-    line_h = font_size + 14
-    total_text_h = len(wrapped_lines) * line_h
-
-    img = PIL.Image.new('RGBA', (video_width, panel_h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    y_start = (panel_h - total_text_h) // 2
-
-    for j, line in enumerate(wrapped_lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        line_w = bbox[2] - bbox[0]
-        line_actual_h = bbox[3] - bbox[1]
-        x = (video_width - line_w) // 2
-        y = y_start + j * line_h
-
-        # Dark semi-transparent pill
-        pill_pad_x = 18
-        pill_pad_y = 8
-        pill_x0 = x - pill_pad_x
-        pill_y0 = y - pill_pad_y
-        pill_x1 = x + line_w + pill_pad_x
-        pill_y1 = y + line_actual_h + pill_pad_y
-        radius = 10
-        pill_layer = PIL.Image.new('RGBA', (video_width, panel_h), (0, 0, 0, 0))
-        pill_draw = ImageDraw.Draw(pill_layer)
-        pill_draw.rounded_rectangle(
-            [pill_x0, pill_y0, pill_x1, pill_y1],
-            radius=radius,
-            fill=(0, 0, 0, 210)
-        )
-        img = PIL.Image.alpha_composite(img, pill_layer)
-        draw = ImageDraw.Draw(img)
-
-        # 3px black stroke
-        stroke = 3
-        for dx in range(-stroke, stroke + 1):
-            for dy in range(-stroke, stroke + 1):
-                if dx != 0 or dy != 0:
-                    draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 255))
-
-        # Lal Kitab cream — slightly warmer than pure white, aged paper feel
-        draw.text((x, y), line, font=font, fill=(255, 210, 195, 255))
-
-    return np.array(img)
-
-
-def build_caption_panel(video_width, video_height, duration, leather_path=None):
-    """Parchment panel at bottom of frame during voice."""
-    from moviepy.editor import ColorClip, ImageClip
-
-    panel_h = 310
-    panel_y = video_height - panel_h
-
-    if leather_path and os.path.exists(leather_path):
-        arr = render_leather_panel(video_width, panel_h, leather_path)
-        if arr is not None:
-            panel_clip = (ImageClip(arr, ismask=False)
-                          .set_position((0, panel_y))
-                          .set_duration(duration))
-            return [panel_clip]
-
-    # Fallback — Lal Kitab dark red panel
-    base = (ColorClip(size=(video_width, panel_h), color=(35, 5, 5))
-            .set_opacity(0.88)
-            .set_position((0, panel_y))
-            .set_duration(duration))
-    return [base]
-
-
-def build_caption_clips(beat1_text, beats, voice_duration, video_width, video_height):
-    """Captions: beat1 → beat 2 → beat 3 → exit, synced to voice duration.
-    PIL-rendered with Devanagari font support for Hindi."""
-    caption_clips = []
-
-    all_items = []
-    if beat1_text:
-        all_items.append({'text': beat1_text, 'pause_after': True})
-    for beat in beats:
-        all_items.append(beat)
-
-    if not all_items:
-        return caption_clips
-
-    cleaned = [strip_action_tags(item.get('text', '')) for item in all_items]
-    char_counts = [max(len(t), 1) for t in cleaned]
-
-    weights = []
-    for i, item in enumerate(all_items):
-        w = char_counts[i]
-        if item.get('pause_after', False):
-            w *= 1.65
-        weights.append(w)
-    total_weight = sum(weights)
-
-    panel_h = 310
-    panel_y = video_height - panel_h
-
-    current_time = 0
-    for i, item in enumerate(all_items):
-        text = cleaned[i]
-        if not text:
-            current_time += (weights[i] / total_weight) * voice_duration
-            continue
-
-        duration = (weights[i] / total_weight) * voice_duration
-        duration = min(duration, voice_duration - current_time)
-        if duration <= 0:
-            break
-
-        try:
-            arr = render_caption_image(text, video_width, panel_h)
-            clip = (ImageClip(arr, ismask=False)
-                    .set_position((0, panel_y))
-                    .set_start(current_time)
-                    .set_duration(duration))
-            caption_clips.append(clip)
-            print(f'[caption {i}] "{text[:40]}…" dur={duration:.2f}s')
-        except Exception as e:
-            print(f'[caption {i}] PIL render failed: {e}')
-
-        current_time += duration
-
-    return caption_clips
-
-
-def get_outro_sound_url(supabase_url, supabase_key):
-    try:
-        response = requests.get(
-            f'{supabase_url}/rest/v1/googalji_settings?key=eq.outro_sound_url&limit=1',
-            headers={'apikey': supabase_key, 'Authorization': f'Bearer {supabase_key}'}
-        )
-        data = response.json()
-        if data and data[0].get('value') and data[0]['value'] != 'PLACEHOLDER':
-            return data[0]['value']
-    except Exception as e:
-        print(f'Failed to fetch outro sound URL: {e}')
-    return None
-
-
-def get_setting(supabase_url, supabase_key, key):
-    try:
-        response = requests.get(
-            f'{supabase_url}/rest/v1/googalji_settings?key=eq.{key}&limit=1',
-            headers={'apikey': supabase_key, 'Authorization': f'Bearer {supabase_key}'}
-        )
-        data = response.json()
-        if data and data[0].get('value'):
-            return data[0]['value']
-    except Exception as e:
-        print(f'Failed to fetch setting {key}: {e}')
-    return None
-
-
-def build_outro_card(video_width, video_height, outro_audio_path=None,
-                     duration=3.5, image_path=None, logo_path=None):
-    """Googalji outro card — warmer parchment tone.
-    'Googalji' / 'Numbers ne bataya tha.' / 'Apna number jaano.' / 'Follow @thegoogalji'"""
-    try:
-        from moviepy.editor import ColorClip, TextClip, CompositeVideoClip, AudioFileClip, ImageClip
-
-        if image_path and os.path.exists(image_path):
-            bg_img = ImageClip(image_path).resize((video_width, video_height)).set_duration(duration)
-            # Deep red overlay — Lal Kitab feel
-            dark_overlay = ColorClip(size=(video_width, video_height), color=(25, 4, 4)).set_opacity(0.84).set_duration(duration)
-            bg = CompositeVideoClip([bg_img, dark_overlay], size=(video_width, video_height))
-        else:
-            # Deep Lal Kitab red-black
-            bg = ColorClip(size=(video_width, video_height), color=(20, 4, 4)).set_duration(duration)
-
-        name_clip = (TextClip(
-            "Googalji",
-            fontsize=58, color='white', font='DejaVu-Serif-Bold', method='label', align='center'
-        ).set_position(('center', video_height * 0.38)).set_duration(duration))
-
-        tagline_clip = (TextClip(
-            "Numbers ne bataya tha.",
-            fontsize=32, color='#c87060', font='DejaVu-Serif', method='label', align='center'
-        ).set_position(('center', video_height * 0.50)).set_duration(duration))
-
-        sub_clip = (TextClip(
-            "Apna number jaano.",
-            fontsize=26, color='#aaaaaa', font='DejaVu-Serif', method='label', align='center'
-        ).set_position(('center', video_height * 0.63)).set_duration(duration))
-
-        follow_clip = (TextClip(
-            "Follow @thegoogalji",
-            fontsize=24, color='#888888', font='DejaVu-Serif', method='label', align='center'
-        ).set_position(('center', video_height * 0.70)).set_duration(duration))
-
-        outro_layers = [bg, name_clip, tagline_clip, sub_clip, follow_clip]
-
-        if logo_path and os.path.exists(logo_path):
-            try:
-                outro_logo = ImageClip(logo_path).resize(height=70).set_position((24, 24)).set_duration(duration)
-                outro_layers.append(outro_logo)
-            except Exception as e:
-                print(f'Logo on outro failed: {e}')
-
-        outro = CompositeVideoClip(outro_layers, size=(video_width, video_height))
-
-        if outro_audio_path and os.path.exists(outro_audio_path):
-            try:
-                outro_audio = AudioFileClip(outro_audio_path).subclip(0, min(duration, AudioFileClip(outro_audio_path).duration))
-                outro = outro.set_audio(outro_audio)
-            except Exception as e:
-                print(f'Outro audio failed: {e}')
-
-        return outro
-    except Exception as e:
-        print(f'Outro card failed: {e}')
-        return None
-
-
-# ─── Main assembly ─────────────────────────────────────────────────────────────
-
-def assemble_video(image_path, audio_path, beats, output_path, beat1_text=None,
-                   outro_sound_path=None, typewriter_sound_path=None,
-                   outro_bg_path=None, logo_path=None, leather_panel_path=None):
-    """
-    Video structure:
-    1. Main clip — face fades in 0.3s, voice starts immediately
-       - Warm amber overlay 8% opacity (lamp-lit feel)
-       - Ken Burns slow zoom 1.0x → 1.06x (subtler than Oldverdict — Googalji is stiller)
-       - Parchment panel with captions: beat1 → beat 2 → beat 3 → exit line
-       - Panel and captions disappear when voice ends
-    2. Post-voice hold — 2.0s clean face, no panel, zoom continues
-    3. Fade to black 0.6s + 1.5s black gap
-    4. Outro card — 3.5s, fades in 0.5s
-    """
-    audio = AudioFileClip(audio_path)
-    voice_duration = audio.duration
-
-    target_width = 540
-    target_height = 960
-
-    pil_orig = PIL.Image.open(image_path).convert('RGB')
-    img_w, img_h = pil_orig.size
-    base_scale = max(target_width / img_w, target_height / img_h) * 1.2
-
-    post_hold = 2.0
-    total_duration = voice_duration + post_hold
-
-    # ── Ken Burns: 1.0x → 1.06x — subtler than Oldverdict ───────────────────
-    def make_frame(t):
-        progress = min(t / total_duration, 1.0)
-        zoom = 1.0 + 0.06 * progress          # 1.00 → 1.06 (Googalji is stiller)
-        scale = base_scale * zoom
-        new_w = int(img_w * scale)
-        new_h = int(img_h * scale)
-        frame = pil_orig.resize((new_w, new_h), PIL.Image.BILINEAR)
-        x0 = (new_w - target_width) // 2
-        y0 = int(new_h * 0.38) - target_height // 2
-        y0 = max(0, min(y0, new_h - target_height))
-        x0 = max(0, min(x0, new_w - target_width))
-        frame = frame.crop((x0, y0, x0 + target_width, y0 + target_height))
-        # Apply warm amber overlay — 8% opacity, lamp-lit feel
-        return apply_amber_overlay(np.array(frame), opacity=0.08)
-
-    image_clip = VideoClip(make_frame, duration=total_duration)
-
-    # ── Panel + captions — only during voice ────────────────────────────────
-    panel_layers = build_caption_panel(target_width, target_height, voice_duration, leather_path=leather_panel_path)
-    caption_clips = build_caption_clips(beat1_text, beats, voice_duration, target_width, target_height)
-
-    # ── Audio ────────────────────────────────────────────────────────────────
-    audio_faded = audio.audio_fadein(0.3).audio_fadeout(0.5)
-    silence_post = AudioClip(lambda t: np.zeros(2), duration=post_hold, fps=44100)
-    extended_audio = concatenate_audioclips([audio_faded, silence_post])
-
-    main_layers = [image_clip] + panel_layers + caption_clips
-    main_clip = CompositeVideoClip(main_layers, size=(target_width, target_height))
-    main_clip = main_clip.fadein(0.3).set_audio(extended_audio).set_duration(total_duration).fadeout(0.6)
-
-    from moviepy.editor import concatenate_videoclips, ColorClip as _ColorClip
-
-    clips = [main_clip]
-
-    fade_gap = _ColorClip(size=(target_width, target_height), color=(0, 0, 0)).set_duration(1.5)
-    clips.append(fade_gap)
-
-    outro_card = build_outro_card(
-        target_width, target_height,
-        outro_audio_path=outro_sound_path,
-        duration=3.5,
-        image_path=outro_bg_path,
-        logo_path=logo_path
-    )
-    if outro_card:
-        outro_card = outro_card.fadein(0.5)
-        clips.append(outro_card)
-
-    final = concatenate_videoclips(clips) if len(clips) > 1 else main_clip
-
-    final.write_videofile(
-        output_path,
-        fps=24,
-        codec='libx264',
-        audio_codec='aac',
-        temp_audiofile=output_path + '_temp_audio.m4a',
-        remove_temp=True,
-        preset='ultrafast',
-        ffmpeg_params=['-crf', '28']
-    )
-
-    audio.close()
-    final.close()
-
-
-def upload_video(script_id, video_path):
-    with open(video_path, 'rb') as f:
-        video_data = f.read()
-
-    file_name = f'videos/{script_id}.mp4'
-    response = requests.post(
-        f'{SUPABASE_URL}/storage/v1/object/googalji-media/{file_name}',
-        headers={
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Content-Type': 'video/mp4',
-            'Cache-Control': '3600',
-            'x-upsert': 'true'
-        },
-        data=video_data,
-        timeout=120
-    )
-    if not response.ok:
-        raise Exception(f'Video upload failed: {response.text}')
-    return f'{SUPABASE_URL}/storage/v1/object/public/googalji-media/{file_name}'
-
-
-def update_video_record(script_id, video_url):
-    requests.patch(
-        f'{SUPABASE_URL}/rest/v1/googalji_videos?script_id=eq.{script_id}',
-        headers={
-            'apikey': SUPABASE_KEY,
-            'Authorization': f'Bearer {SUPABASE_KEY}',
-            'Content-Type': 'application/json'
-        },
-        json={'video_url': video_url}
-    )
-
-
-def run_pipeline_job():
-    print('[Pipeline] Starting Googalji pipeline...')
-
-    image_path = audio_path = output_path = None
-    outro_sound_path = outro_bg_path = logo_path = None
-
-    try:
-        print('[Pipeline] Step 1: Calling council worker...')
-        council_res = requests.post(
-            COUNCIL_URL,
-            headers={'Authorization': f'Bearer {BEARER}', 'Content-Type': 'application/json'},
-            json={}, timeout=60
-        )
-        council_res.raise_for_status()
-        council_data = council_res.json()
-        script_id = council_data.get('script_id')
-
-        if not script_id:
-            print(f'[Pipeline] Council failed: {council_data}')
-            return
-
-        print(f'[Pipeline] Script generated: {script_id}')
-
-        print('[Pipeline] Step 2: Calling voice and image workers simultaneously...')
-
-        def call_voice():
-            res = requests.post(VOICE_URL,
-                                headers={'Authorization': f'Bearer {BEARER}', 'Content-Type': 'application/json'},
-                                json={'script_id': script_id}, timeout=120)
-            return ('voice', res.status_code, res.text)
-
-        def call_image():
-            res = requests.post(IMAGE_URL,
-                                headers={'Authorization': f'Bearer {BEARER}', 'Content-Type': 'application/json'},
-                                json={'script_id': script_id}, timeout=120)
-            return ('image', res.status_code, res.text)
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [executor.submit(call_voice), executor.submit(call_image)]
-            for future in as_completed(futures):
-                label, status, body = future.result()
-                print(f'[Pipeline] {label} worker: {status} - {body[:200]}')
-
-        print('[Pipeline] Step 3: Polling for voice and image completion...')
-        max_wait, poll_interval, elapsed = 300, 10, 0
-        voice_ready = image_ready = False
-
-        while elapsed < max_wait:
-            try:
-                rec = get_video_record(script_id)
-                voice_ready = bool(rec.get('voice_file_url'))
-                image_ready = bool(rec.get('image_url'))
-                print(f'[Pipeline] Poll {elapsed}s - voice: {voice_ready}, image: {image_ready}')
-                if voice_ready and image_ready:
-                    break
-            except Exception as e:
-                print(f'[Pipeline] Poll error: {e}')
-            time.sleep(poll_interval)
-            elapsed += poll_interval
-
-        if not voice_ready or not image_ready:
-            print(f'[Pipeline] Timeout. voice: {voice_ready}, image: {image_ready}')
-            return
-
-        print('[Pipeline] Step 4: Assembling video...')
-        video_record = get_video_record(script_id)
-        script = get_script(script_id)
-
-        outro_sound_url = get_outro_sound_url(SUPABASE_URL, SUPABASE_KEY)
-        outro_bg_url = get_setting(SUPABASE_URL, SUPABASE_KEY, 'outro_bg_url')
-        logo_url = get_setting(SUPABASE_URL, SUPABASE_KEY, 'logo_url')
-
-        image_url = video_record.get('image_url')
-        audio_url = video_record.get('voice_file_url')
-
-        image_path = download_file(image_url, '.jpg')
-        audio_path = download_file(audio_url, '.mp3')
-
-        if outro_sound_url:
-            try:
-                outro_sound_path = download_file(outro_sound_url, '.mp3')
-            except Exception as e:
-                print(f'[Pipeline] Outro sound download failed: {e}')
-
-        if outro_bg_url:
-            try:
-                outro_bg_path = download_file(outro_bg_url, '.jpg')
-            except Exception as e:
-                print(f'[Pipeline] Outro bg download failed: {e}')
-
-        if logo_url:
-            try:
-                logo_path = download_file(logo_url, '.png')
-            except Exception as e:
-                print(f'[Pipeline] Logo download failed: {e}')
-
-        leather_panel_url = get_setting(SUPABASE_URL, SUPABASE_KEY, 'leather_panel_url')
-        leather_panel_path = None
-        if leather_panel_url:
-            try:
-                leather_panel_path = download_file(leather_panel_url, '.png')
-                print(f'[Pipeline] Leather panel downloaded')
-            except Exception as e:
-                print(f'[Pipeline] Leather panel download failed: {e}')
-
-        output_path = tempfile.mktemp(suffix='.mp4')
-
-        beats = script.get('beats', [])
-        if isinstance(beats, str):
-            beats = json.loads(beats)
-        beat1_text = script.get('beat1', None)
-
-        assemble_video(image_path, audio_path, beats, output_path, beat1_text,
-                       outro_sound_path, None, outro_bg_path, logo_path,
-                       leather_panel_path=leather_panel_path)
-
-        video_url = upload_video(script_id, output_path)
-        update_video_record(script_id, video_url)
-        print(f'[Pipeline] Done. Video URL: {video_url}')
-
-        if YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN:
-            print('[Pipeline] Step 5: Publishing to YouTube...')
-            publish_to_youtube_job(script_id)
-        else:
-            print('[Pipeline] YouTube credentials not set. Skipping.')
-
-        if IG_ACCESS_TOKEN and IG_ACCOUNT_ID:
-            print('[Pipeline] Step 6: Publishing to Instagram...')
-            ig_media_id = publish_to_instagram_job(script_id)
-            if ig_media_id:
-                print(f'[Pipeline] Instagram published: {ig_media_id}')
-        else:
-            print('[Pipeline] Instagram credentials not set. Skipping.')
-
-    except Exception as e:
-        import traceback
-        print(f'[Pipeline] Error: {e}')
-        print(traceback.format_exc())
-    finally:
-        for path in [image_path, audio_path, output_path, outro_sound_path, outro_bg_path, logo_path]:
-            if path and os.path.exists(path):
-                try:
-                    os.unlink(path)
-                except Exception:
-                    pass
-
-
-# ─── Routes ────────────────────────────────────────────────────────────────────
-
-@app.route('/', methods=['GET'])
-def health():
-    return jsonify({'status': 'Googalji Assembly standing by.'})
-
-
-@app.route('/run-pipeline', methods=['POST'])
-def run_pipeline():
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    thread = threading.Thread(target=run_pipeline_job, daemon=True)
-    thread.start()
-    return jsonify({
-        'status': 'Pipeline started',
-        'message': 'Council → Voice + Image → Assembly → YouTube → Instagram running in background'
-    }), 202
-
-
-@app.route('/video-status', methods=['GET'])
-def video_status():
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    script_id = request.args.get('script_id')
-    if not script_id:
-        return jsonify({'error': 'script_id required'}), 400
-    try:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/googalji_videos?script_id=eq.{script_id}&select=video_url,voice_file_url,image_url",
-            headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}'}
-        )
-        rows = res.json()
-        if rows and rows[0].get('video_url'):
-            return jsonify({'ready': True, 'video_url': rows[0]['video_url']})
-        return jsonify({'ready': False})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/publish', methods=['POST'])
-def publish():
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    data = request.get_json()
-    script_id = data.get('script_id')
-    if not script_id:
-        return jsonify({'error': 'script_id is required'}), 400
-    publish_to_youtube_job(script_id)
-    return jsonify({'status': 'Publish complete', 'script_id': script_id}), 200
-
-
-@app.route('/publish-instagram', methods=['POST'])
-def publish_instagram():
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    data = request.get_json() or {}
-    script_id = data.get('script_id')
-    if not script_id:
-        return jsonify({'error': 'script_id is required'}), 400
-    if not IG_ACCESS_TOKEN or not IG_ACCOUNT_ID:
-        return jsonify({'error': 'IG_ACCESS_TOKEN or IG_ACCOUNT_ID not set'}), 500
-    media_id = publish_to_instagram_job(script_id)
-    if media_id:
-        return jsonify({'success': True, 'media_id': media_id, 'script_id': script_id}), 200
-    return jsonify({'success': False, 'error': 'Instagram publish failed', 'script_id': script_id}), 500
-
-
-def assemble_job(script_id, auto_publish=False):
-    image_path = audio_path = output_path = None
-    try:
-        video_record = get_video_record(script_id)
-        script = get_script(script_id)
-
-        outro_sound_url = get_outro_sound_url(SUPABASE_URL, SUPABASE_KEY)
-        outro_bg_url = get_setting(SUPABASE_URL, SUPABASE_KEY, 'outro_bg_url')
-        logo_url = get_setting(SUPABASE_URL, SUPABASE_KEY, 'logo_url')
-
-        image_url = video_record.get('image_url')
-        audio_url = video_record.get('voice_file_url')
-
-        if not image_url:
-            print(f"[assemble_job] No image for {script_id}"); return
-        if not audio_url:
-            print(f"[assemble_job] No audio for {script_id}"); return
-
-        image_path = download_file(image_url, '.jpg')
-        audio_path = download_file(audio_url, '.mp3')
-
-        outro_sound_path = None
-        if outro_sound_url:
-            try: outro_sound_path = download_file(outro_sound_url, '.mp3')
-            except Exception as e: print(f'Outro sound download failed: {e}')
-
-        outro_bg_path = None
-        if outro_bg_url:
-            try: outro_bg_path = download_file(outro_bg_url, '.jpg')
-            except Exception as e: print(f'Outro bg download failed: {e}')
-
-        logo_path = None
-        if logo_url:
-            try: logo_path = download_file(logo_url, '.png')
-            except Exception as e: print(f'Logo download failed: {e}')
-
-        leather_panel_url = get_setting(SUPABASE_URL, SUPABASE_KEY, 'leather_panel_url')
-        leather_panel_path = None
-        if leather_panel_url:
-            try: leather_panel_path = download_file(leather_panel_url, '.png')
-            except Exception as e: print(f'Leather panel download failed: {e}')
-
-        output_path = tempfile.mktemp(suffix='.mp4')
-
-        beats = script.get('beats', [])
-        if isinstance(beats, str):
-            beats = json.loads(beats)
-        beat1_text = script.get('beat1', None)
-
-        assemble_video(image_path, audio_path, beats, output_path, beat1_text,
-                       outro_sound_path, None, outro_bg_path, logo_path,
-                       leather_panel_path=leather_panel_path)
-
-        video_url = upload_video(script_id, output_path)
-        update_video_record(script_id, video_url)
-        print(f"[assemble_job] Done: {video_url}")
-
-        if auto_publish:
-            publish_to_youtube_job(script_id)
-            publish_to_instagram_job(script_id)
-
-    except Exception as e:
-        import traceback
-        print(f"[assemble_job] Error: {e}")
-        print(traceback.format_exc())
-    finally:
-        for path in [image_path, audio_path, output_path]:
-            if path and os.path.exists(path):
-                try: os.unlink(path)
-                except Exception: pass
-
-
-@app.route('/assemble', methods=['POST'])
-def assemble():
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    data = request.get_json()
-    script_id = data.get('script_id')
-    if not script_id:
-        return jsonify({'error': 'script_id is required'}), 400
-    thread = threading.Thread(target=assemble_job, args=(script_id, False), daemon=True)
-    thread.start()
-    return jsonify({'status': 'Assembly started', 'script_id': script_id,
-                    'message': 'Poll /video-status for completion. Use /publish to publish manually.'}), 202
-
-
-@app.route('/videos/list', methods=['GET', 'OPTIONS'])
-def videos_list():
-    if request.method == 'OPTIONS':
-        return '', 204, {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Authorization,Content-Type',
-            'Access-Control-Allow-Methods': 'GET,OPTIONS'
+      }
+
+      if (!passesBlacklist(rawTopic)) {
+        return new Response(JSON.stringify({
+          error: 'Topic did not pass blacklist filter.',
+          topic: rawTopic
+        }), { status: 400, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
+      }
+
+      const preliminaryTags = rawTopic.toLowerCase().split(' ').filter(w => w.length > 4).slice(0, 3);
+      const relatedScripts = await fetchRecentScripts(env.SUPABASE_URL, env.SUPABASE_KEY, preliminaryTags);
+
+      let script;
+      try {
+        script = await generateScript(env.OPENAI_API_KEY, rawTopic, category, relatedScripts);
+      } catch (genError) {
+        if (genError.message.startsWith('REFUSAL')) {
+          console.log('Topic refused by OpenAI, falling back to Category B:', rawTopic);
+          if (topicId) {
+            await fetch(`${env.SUPABASE_URL}/rest/v1/googalji_topics?id=eq.${topicId}`, {
+              method: 'PATCH',
+              headers: { 'apikey': env.SUPABASE_KEY, 'Authorization': `Bearer ${env.SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ used: true })
+            });
+          }
+          rawTopic = 'Birth number 1 — what people with this number do that they don\'t realize they are doing';
+          category = 'B';
+          topicId = null;
+          script = await generateScript(env.OPENAI_API_KEY, rawTopic, 'B', []);
+        } else {
+          throw genError;
         }
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/googalji_videos"
-            f"?select=id,script_id,video_url,created_at,googalji_scripts(beat1,published,category)"
-            f"&video_url=not.is.null"
-            f"&order=created_at.desc",
-            headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}'}
-        )
-        rows = res.json()
-        return jsonify({'videos': rows})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+      }
 
+      if (!script.beat1) {
+        script.beat1 = rawTopic;
+      }
 
-@app.route('/videos/delete', methods=['POST', 'OPTIONS'])
-def videos_delete():
-    if request.method == 'OPTIONS':
-        return '', 204, {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Authorization,Content-Type',
-            'Access-Control-Allow-Methods': 'POST,OPTIONS'
-        }
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    data = request.get_json() or {}
-    script_id = data.get('script_id')
-    if not script_id:
-        return jsonify({'error': 'script_id required'}), 400
-    try:
-        storage_path = f"videos/{script_id}.mp4"
-        requests.delete(
-            f"{SUPABASE_URL}/storage/v1/object/googalji-media/{storage_path}",
-            headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}'}
-        )
-        requests.delete(
-            f"{SUPABASE_URL}/rest/v1/googalji_videos?script_id=eq.{script_id}",
-            headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}',
-                     'Prefer': 'return=minimal'}
-        )
-        return jsonify({'deleted': True, 'script_id': script_id})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+      const stored = await storeScript(
+        env.SUPABASE_URL, env.SUPABASE_KEY,
+        topicId, category, rawTopic, script, relatedScripts
+      );
 
+      return new Response(JSON.stringify({
+        success: true,
+        script_id: stored.id,
+        category,
+        raw_topic: rawTopic,
+        script,
+        memory_connections: relatedScripts.length
+      }), {
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+      });
 
-@app.route('/videos/incomplete', methods=['GET'])
-def videos_incomplete():
-    if not check_auth(request):
-        return jsonify({'error': 'Unauthorized'}), 401
-    try:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/googalji_videos"
-            f"?select=id,script_id,voice_file_url,image_url,video_url,created_at,googalji_scripts(beat1,category,raw_topic)"
-            f"&voice_file_url=not.is.null"
-            f"&image_url=not.is.null"
-            f"&video_url=is.null"
-            f"&order=created_at.desc",
-            headers={'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}'}
-        )
-        rows = res.json()
-        return jsonify({'incomplete': rows})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    } catch (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+      });
+    }
+  },
 
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      fetch(`https://${env.WORKER_DOMAIN}/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.COUNCIL_SECRET}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      })
+    );
+  }
+};
