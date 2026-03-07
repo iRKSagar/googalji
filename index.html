@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Googalji — Pipeline Control</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      background: #0d0505;
+      font-family: 'Crimson Pro', Georgia, serif;
+      color: #f0dcc8;
+      min-height: 100vh;
+    }
+
+    /* Lal Kitab texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 32px, rgba(140,20,20,0.03) 32px, rgba(140,20,20,0.03) 33px),
+        repeating-linear-gradient(90deg, transparent, transparent 48px, rgba(100,10,10,0.02) 48px, rgba(100,10,10,0.02) 49px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Red dust grain */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    #root { position: relative; z-index: 1; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #0a0303; }
+    ::-webkit-scrollbar-thumb { background: #7a1a1a; border-radius: 3px; }
+
+    @keyframes pulse {
+      0%,100% { opacity:1; box-shadow: 0 0 10px #c0392b; }
+      50% { opacity:0.6; box-shadow: 0 0 4px #c0392b; }
+    }
+    @keyframes fadein {
+      from { opacity:0; transform: translateY(6px); }
+      to { opacity:1; transform: translateY(0); }
+    }
+    @keyframes flicker {
+      0%,100% { opacity: 1; }
+      92% { opacity: 1; }
+      93% { opacity: 0.85; }
+      94% { opacity: 1; }
+      97% { opacity: 0.9; }
+      98% { opacity: 1; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    button { transition: all 0.18s ease; font-family: 'Crimson Pro', Georgia, serif; }
+    button:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(0); }
+
+    .deva { font-family: 'Crimson Pro', Georgia, serif; }
+
+    /* Lal Kitab red border decoration */
+    .kitab-border {
+      border: 1px solid #5a1a1a;
+      border-top: 3px solid #8b2020;
+      position: relative;
+    }
+    .kitab-border::before {
+      content: '';
+      position: absolute;
+      top: -6px; left: 20px;
+      width: 40px; height: 3px;
+      background: #c0392b;
+    }
+    .kitab-border::after {
+      content: '';
+      position: absolute;
+      top: -6px; right: 20px;
+      width: 40px; height: 3px;
+      background: #c0392b;
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ── Config — update BEARER and URLs after workers are deployed ────────────────
+const BEARER  = "GOOGALJI_SECRET_CHANGE_ME";
+const COUNCIL = "https://googalji-council.YOUR_SUBDOMAIN.workers.dev/";
+const VOICE   = "https://googalji-voice.YOUR_SUBDOMAIN.workers.dev/";
+const IMAGE   = "https://googalji-image.YOUR_SUBDOMAIN.workers.dev/";
+const RENDER  = "https://googalji.onrender.com";
+
+const H = { "Authorization": `Bearer ${BEARER}`, "Content-Type": "application/json" };
+const CATS = ["A","B","C","D","E","F"];
+const CAT_LABELS = {
+  A: "Date Energy",
+  B: "Birth Number",
+  C: "Name Number",
+  D: "Year Number",
+  E: "Number Pattern",
+  F: "Contrast & Gap"
+};
+
+// ── Log hook ──────────────────────────────────────────────────────────────────
+function useLog() {
+  const [logs, setLogs] = useState([]);
+  const add = (msg, type="info") => {
+    const ts = new Date().toLocaleTimeString();
+    setLogs(l => [...l, { msg, type, ts, id: Date.now() + Math.random() }]);
+  };
+  const clear = () => setLogs([]);
+  return { logs, add, clear };
+}
+
+// ── Status Pill ───────────────────────────────────────────────────────────────
+function StatusPill({ status }) {
+  const cfg = {
+    idle:    { bg:"#140505", color:"#c07060", label:"Idle" },
+    running: { bg:"#1a0808", color:"#c0392b", label:"Running…", pulse:true },
+    success: { bg:"#080f08", color:"#4caf50", label:"Done ✓" },
+    error:   { bg:"#1a0505", color:"#e74c3c", label:"Error" },
+  };
+  const c = cfg[status] || cfg.idle;
+  return (
+    <span style={{
+      display:"inline-block", padding:"4px 18px", borderRadius:20,
+      background:c.bg, color:c.color, fontSize:12, letterSpacing:"0.15em",
+      animation: c.pulse ? "pulse 1.6s infinite" : "none",
+      border:`1px solid ${c.color}40`,
+      fontFamily:"'Crimson Pro', Georgia, serif"
+    }}>
+      {c.label}
+    </span>
+  );
+}
+
+// ── Log Console ───────────────────────────────────────────────────────────────
+function LogConsole({ logs, onClear }) {
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [logs]);
+  const colors = {
+    step:"#f1948a", success:"#82e0aa", error:"#f1948a",
+    warn:"#f0b27a", info:"#d5b8a0", id:"#f9e79f"
+  };
+  return (
+    <div style={{ maxWidth:680, margin:"0 auto 32px",
+      background:"#0a0303", border:"1px solid #3a0f0f",
+      borderTop:"2px solid #7a1a1a", borderRadius:10, overflow:"hidden" }}>
+      <div style={{
+        display:"flex", justifyContent:"space-between", alignItems:"center",
+        padding:"8px 16px", borderBottom:"1px solid #2a0a0a", background:"#0d0404"
+      }}>
+        <span style={{ fontSize:10, letterSpacing:"0.25em", color:"#c07060",
+          textTransform:"uppercase" }}>Console</span>
+        <button onClick={onClear} style={{
+          background:"none", border:"none", color:"#4a1a1a",
+          fontSize:10, cursor:"pointer", letterSpacing:"0.1em"
+        }}>CLEAR</button>
+      </div>
+      <div style={{ padding:"12px 16px", maxHeight:200, overflowY:"auto",
+        fontFamily:"monospace", fontSize:11.5 }}>
+        {logs.length === 0
+          ? <span style={{ color:"#6a3030" }}>Waiting…</span>
+          : logs.map(l => (
+            <div key={l.id} style={{
+              color: colors[l.type] || colors.info,
+              lineHeight:1.7, animation:"fadein 0.2s ease"
+            }}>
+              <span style={{ color:"#3a1010", marginRight:8 }}>{l.ts}</span>
+              <span style={{ marginRight:6 }}>
+                {l.type==="step" ? "›" : l.type==="success" ? "✓"
+                  : l.type==="error" ? "✗" : l.type==="id" ? "#" : " "}
+              </span>
+              {l.msg}
+            </div>
+          ))
+        }
+        <div ref={endRef} />
+      </div>
+    </div>
+  );
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function Modal({ show, title, subtitle, icon, onClose, children }) {
+  if (!show) return null;
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,0.82)", zIndex:100,
+      display:"flex", alignItems:"center", justifyContent:"center", padding:20
+    }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background:"#0d0404", borderRadius:14,
+        border:"1px solid #5a1a1a", borderTop:"3px solid #9b2020",
+        padding:"28px 28px 24px", width:"100%", maxWidth:420,
+        animation:"fadein 0.2s ease", boxShadow:"0 8px 60px rgba(180,0,0,0.2)",
+        position:"relative"
+      }}>
+        {/* Red corner decorations */}
+        <div style={{
+          position:"absolute", top:8, left:8, width:16, height:16,
+          borderTop:"2px solid #c0392b", borderLeft:"2px solid #c0392b"
+        }} />
+        <div style={{
+          position:"absolute", top:8, right:8, width:16, height:16,
+          borderTop:"2px solid #c0392b", borderRight:"2px solid #c0392b"
+        }} />
+        <div style={{
+          position:"absolute", bottom:8, left:8, width:16, height:16,
+          borderBottom:"2px solid #c0392b", borderLeft:"2px solid #c0392b"
+        }} />
+        <div style={{
+          position:"absolute", bottom:8, right:8, width:16, height:16,
+          borderBottom:"2px solid #c0392b", borderRight:"2px solid #c0392b"
+        }} />
+
+        <div style={{
+          display:"flex", justifyContent:"space-between",
+          alignItems:"flex-start", marginBottom:20
+        }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:700, color:"#e8c0a0" }}>
+              {icon} {title}
+            </div>
+            {subtitle && (
+              <div className="deva" style={{ fontSize:12, color:"#c07060", marginTop:3 }}>
+                {subtitle}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{
+            background:"none", border:"none", color:"#b06050",
+            fontSize:20, cursor:"pointer", lineHeight:1
+          }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Category Picker ────────────────────────────────────────────────────────────
+function CatPicker({ value, onChange }) {
+  return (
+    <div>
+      <div style={{
+        fontSize:10, letterSpacing:"0.2em", color:"#d08060",
+        textTransform:"uppercase", marginBottom:10
+      }}>Category</div>
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+        {CATS.map(c => (
+          <button key={c} onClick={() => onChange(c)} style={{
+            padding:"7px 14px", borderRadius:7,
+            border: value===c ? "1px solid #c0392b" : "1px solid #2a0a0a",
+            fontFamily:"'Crimson Pro', Georgia, serif", fontSize:12, cursor:"pointer",
+            background: value===c ? "#3a0a0a" : "#120303",
+            color: value===c ? "#f0c0a0" : "#7a3030",
+            fontWeight: value===c ? 700 : 400
+          }}>
+            <span style={{ color: value===c ? "#c0392b" : "#5a2020" }}>{c}</span>
+            {" "}{CAT_LABELS[c]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function wakeRender(add) {
+  add("Waking Render…", "step");
+  for (let i = 0; i < 10; i++) {
+    try {
+      const r = await fetch(`${RENDER}/`, { signal: AbortSignal.timeout(9000) });
+      if (r.ok) { add("Render is awake ✓", "success"); return; }
+    } catch(e) {}
+    add(`Render not ready… attempt ${i+2}`, "info");
+    await new Promise(res => setTimeout(res, 8000));
+  }
+  throw new Error("Render did not wake after 80s");
+}
+
+async function callCouncil(category, add) {
+  add(`Calling council (${category}: ${CAT_LABELS[category]})…`, "step");
+  const r = await fetch(COUNCIL, {
+    method:"POST", headers:H,
+    body: JSON.stringify({ category })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  const sid = d.id || d.script_id;
+  add(`Script ID: ${sid}`, "id");
+  add(`Topic: ${d.raw_topic || "—"}`, "info");
+  return sid;
+}
+
+async function callVoiceAndImage(sid, add) {
+  add("Generating voice + image in parallel…", "step");
+  const [vr, ir] = await Promise.all([
+    fetch(VOICE, { method:"POST", headers:H, body: JSON.stringify({ script_id: sid }) }).then(r => r.json()),
+    fetch(IMAGE, { method:"POST", headers:H, body: JSON.stringify({ script_id: sid }) }).then(r => r.json()),
+  ]);
+  if (vr.error) throw new Error("Voice: " + vr.error);
+  if (ir.error) throw new Error("Image: " + ir.error);
+  add("Voice ready ✓  Image ready ✓", "success");
+}
+
+async function callAssemble(sid, add, onVideoReady) {
+  add("Triggering assembly…", "step");
+  const r = await fetch(`${RENDER}/assemble`, {
+    method:"POST", headers:H, body: JSON.stringify({ script_id: sid })
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`Assembly failed HTTP ${r.status}: ${t.slice(0,200)}`);
+  }
+  add("Assembly started ✓ — polling for completion…", "success");
+  for (let i = 0; i < 25; i++) {
+    await new Promise(res => setTimeout(res, 12000));
+    if (i % 3 === 0) add(`Still assembling… (${(i+1)*12}s elapsed)`, "info");
+    try {
+      const sr = await fetch(`${RENDER}/video-status?script_id=${sid}`, { headers: H });
+      if (!sr.ok) continue;
+      const sd = await sr.json();
+      if (sd.ready && sd.video_url) {
+        add("Video assembled ✓", "success");
+        if (onVideoReady) onVideoReady(sid, sd.video_url);
+        return sd.video_url;
+      }
+    } catch(e) { if (i % 3 === 0) add(`Poll error: ${e.message}`, "warn"); }
+  }
+  add("Timed out after 5 min — check Render logs", "warn");
+  return null;
+}
+
+async function callPublish(sid, add) {
+  await wakeRender(add);
+  add("Waiting 5s before publish…", "info");
+  await new Promise(res => setTimeout(res, 5000));
+  add("Publishing to YouTube…", "step");
+  const r = await fetch(`${RENDER}/publish`, {
+    method:"POST", headers:H, body: JSON.stringify({ script_id: sid })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  add("Published to YouTube ✓", "success");
+}
+
+async function callPublishInstagram(sid, add) {
+  add("Publishing to Instagram…", "step");
+  const r = await fetch(`${RENDER}/publish-instagram`, {
+    method:"POST", headers:H, body: JSON.stringify({ script_id: sid })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  add("Published to Instagram ✓", "success");
+}
+
+async function wakeAndPublishBoth(sid, add) {
+  await callPublish(sid, add);
+  await callPublishInstagram(sid, add);
+}
+
+// ── Videos Tab ────────────────────────────────────────────────────────────────
+function VideosTab({ onReassemble, pipelineAdd }) {
+  const [videos, setVideos]         = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [actionId, setActionId]     = useState(null);
+  const [selected, setSelected]     = useState(new Set());
+  const [massDeleting, setMassDeleting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setSelected(new Set());
+    try {
+      const r = await fetch(`${RENDER}/videos/list`, { headers: H });
+      const d = await r.json();
+      setVideos(d.videos || []);
+    } catch(e) { console.error("videos/list error", e); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, []);
+
+  function toggleSelect(sid) {
+    setSelected(s => {
+      const n = new Set(s);
+      n.has(sid) ? n.delete(sid) : n.add(sid);
+      return n;
+    });
+  }
+  function toggleAll() {
+    setSelected(selected.size === videos.length
+      ? new Set()
+      : new Set(videos.map(v => v.script_id))
+    );
+  }
+
+  async function deleteSingle(scriptId) {
+    const r = await fetch(`${RENDER}/videos/delete`, {
+      method:"POST", headers:H, body: JSON.stringify({ script_id: scriptId })
+    });
+    const d = await r.json();
+    if (!d.deleted) throw new Error(`Delete fail ${scriptId.slice(0,8)}`);
+    return scriptId;
+  }
+
+  async function handleDelete(scriptId) {
+    if (!confirm("Delete this video permanently?")) return;
+    setActionId(scriptId + "_del");
+    try {
+      await deleteSingle(scriptId);
+      setVideos(v => v.filter(x => x.script_id !== scriptId));
+      setSelected(s => { const n = new Set(s); n.delete(scriptId); return n; });
+      pipelineAdd(`Deleted ${scriptId.slice(0,8)}… ✓`, "success");
+    } catch(e) { pipelineAdd("Delete failed: " + e.message, "error"); }
+    finally { setActionId(null); }
+  }
+
+  async function handleMassDelete() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!confirm(`${ids.length} video(s)? This cannot be undone.`)) return;
+    setMassDeleting(true);
+    let deleted = 0;
+    for (const sid of ids) {
+      try {
+        await deleteSingle(sid);
+        setVideos(v => v.filter(x => x.script_id !== sid));
+        setSelected(s => { const n = new Set(s); n.delete(sid); return n; });
+        deleted++;
+        pipelineAdd(`Delete ${sid.slice(0,8)}… (${deleted}/${ids.length})`, "info");
+      } catch(e) { pipelineAdd(`Fail ${sid.slice(0,8)}: ${e.message}`, "error"); }
+    }
+    pipelineAdd(`Mass delete complete — ${deleted} / ${ids.length} ✓`, "success");
+    setMassDeleting(false);
+  }
+
+  async function handlePublishBoth(scriptId) {
+    setActionId(scriptId + "_pub");
+    try {
+      await wakeAndPublishBoth(scriptId, pipelineAdd);
+      setVideos(v => v.map(x => x.script_id === scriptId
+        ? { ...x, googalji_scripts: { ...x.googalji_scripts, published: true } }
+        : x
+      ));
+      pipelineAdd(`Published ${scriptId.slice(0,8)}… ✓`, "success");
+    } catch(e) { pipelineAdd("Publish failed: " + e.message, "error"); }
+    finally { setActionId(null); }
+  }
+
+  const allSelected = videos.length > 0 && selected.size === videos.length;
+  const someSelected = selected.size > 0;
+
+  const smallBtn = (color, bg, disabled) => ({
+    padding:"5px 12px", borderRadius:6, border:"none",
+    fontSize:11, fontWeight:700,
+    background: disabled ? "#1a0505" : bg,
+    color: disabled ? "#3a1010" : color,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.5 : 1, whiteSpace:"nowrap"
+  });
+
+  return (
+    <div style={{ maxWidth:680, margin:"0 auto" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div>
+          <div style={{ fontSize:10, letterSpacing:"0.25em", color:"#d08060",
+            textTransform:"uppercase" }}>Assembled Videos</div>
+          <div style={{ fontSize:12, color:"#b06050", marginTop:3 }}>
+            Review, publish, or delete.
+          </div>
+        </div>
+        <button onClick={load} disabled={loading} style={{
+          padding:"7px 16px", borderRadius:7,
+          border:"1px solid #4a1818", background:"#0d0404",
+          color:"#d08060", fontSize:12, cursor: loading ? "not-allowed" : "pointer"
+        }}>
+          {loading ? "Loading…" : "↻ Refresh"}
+        </button>
+      </div>
+
+      {someSelected && (
+        <div style={{
+          display:"flex", alignItems:"center", gap:10, marginBottom:14,
+          padding:"10px 14px", borderRadius:8, background:"#140404",
+          border:"1px solid #4a1010", animation:"fadein 0.2s ease"
+        }}>
+          <span style={{ fontSize:12, color:"#c89090", flex:1 }}>
+            {selected.size} selected
+          </span>
+          <button disabled={massDeleting} onClick={handleMassDelete} style={{
+            padding:"6px 16px", borderRadius:6, border:"none",
+            fontSize:12, fontWeight:700,
+            background: massDeleting ? "#2a0808" : "linear-gradient(135deg,#5a0808,#8a1010)",
+            color: massDeleting ? "#3a1010" : "#ffd8d8",
+            cursor: massDeleting ? "not-allowed" : "pointer"
+          }}>
+            {massDeleting ? "Deleting…" : `🗑 Delete ${selected.size}`}
+          </button>
+          <button onClick={() => setSelected(new Set())} style={{
+            padding:"6px 12px", borderRadius:6, border:"1px solid #3a1010",
+            background:"none", color:"#b06050", fontSize:11, cursor:"pointer"
+          }}>Cancel</button>
+        </div>
+      )}
+
+      {videos.length > 0 && (
+        <div style={{
+          display:"flex", alignItems:"center", gap:8, marginBottom:12,
+          padding:"6px 4px", borderBottom:"1px solid #1a0505", flexWrap:"wrap"
+        }}>
+          <input type="checkbox" checked={allSelected} onChange={toggleAll}
+            style={{ width:15, height:15, accentColor:"#c0392b", cursor:"pointer" }} />
+          <span style={{ fontSize:11, color:"#b06050", cursor:"pointer", marginRight:6 }}
+            onClick={toggleAll}>
+            {allSelected ? "Deselect all" : `All (${videos.length})`}
+          </span>
+          <button onClick={() => setSelected(new Set(videos.filter(v => !v.googalji_scripts?.published).map(v => v.script_id)))}
+            style={{ padding:"3px 10px", borderRadius:5, border:"1px solid #3a2808",
+              background:"#100c03", color:"#d4a017", fontSize:10, cursor:"pointer" }}>
+            Unpublished ({videos.filter(v => !v.googalji_scripts?.published).length})
+          </button>
+          <button onClick={() => setSelected(new Set(videos.filter(v => v.googalji_scripts?.published).map(v => v.script_id)))}
+            style={{ padding:"3px 10px", borderRadius:5, border:"1px solid #1a3a1a",
+              background:"#080f08", color:"#4caf50", fontSize:10, cursor:"pointer" }}>
+            Published ({videos.filter(v => v.googalji_scripts?.published).length})
+          </button>
+        </div>
+      )}
+
+      {loading && videos.length === 0 && (
+        <div style={{ color:"#3a1010", fontSize:13, textAlign:"center", padding:"40px 0" }}>
+          Loading…
+        </div>
+      )}
+      {!loading && videos.length === 0 && (
+        <div style={{
+          color:"#3a1010", fontSize:13, textAlign:"center", padding:"40px 0",
+          border:"1px dashed #2a0808", borderRadius:10
+        }}>
+          No assembled videos yet.<br/>
+          <span style={{ fontSize:11, color:"#2a0808" }}>
+            Run Assemble mode to build videos here.
+          </span>
+        </div>
+      )}
+
+      {videos.map(v => {
+        const sid = v.script_id;
+        const beat1 = v.googalji_scripts?.beat1 || "—";
+        const published = v.googalji_scripts?.published === true;
+        const category = v.googalji_scripts?.category || "—";
+        const date = v.created_at ? new Date(v.created_at).toLocaleString() : "—";
+        const isActing = actionId && actionId.startsWith(sid);
+        const isSelected = selected.has(sid);
+
+        return (
+          <div key={sid} onClick={() => toggleSelect(sid)}
+            style={{
+              background: isSelected ? "#140404" : "#0d0303",
+              border:"1px solid " + (isSelected ? "#6a1010" : published ? "#1a3010" : "#2a0808"),
+              borderTop: `2px solid ${published ? "#2a5020" : "#6a1a1a"}`,
+              borderRadius:10, padding:16, marginBottom:10,
+              animation:"fadein 0.25s ease", cursor:"pointer",
+              transition:"all 0.15s"
+            }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(sid)}
+                  onClick={e => e.stopPropagation()}
+                  style={{ width:14, height:14, accentColor:"#c0392b", cursor:"pointer" }} />
+                <span style={{
+                  padding:"2px 10px", borderRadius:10, fontSize:10, fontWeight:700,
+                  letterSpacing:"0.1em", textTransform:"uppercase",
+                  background: published ? "#080f08" : "#120800",
+                  color: published ? "#4caf50" : "#d4a017",
+                  border:`1px solid ${published ? "#1a4010" : "#3a2808"}`
+                }}>
+                  {published ? "Published" : "Unpublished"}
+                </span>
+                <span style={{ padding:"2px 8px", borderRadius:5, fontSize:10,
+                  background:"#120303", color:"#c07060" }}>
+                  {category}: {CAT_LABELS[category] || category}
+                </span>
+              </div>
+              <span style={{ fontSize:10, color:"#3a1010", fontFamily:"monospace" }}>{date}</span>
+            </div>
+
+            {/* beat1 text — the number observation */}
+            <div className="deva" style={{
+              fontSize:13.5, color:"#e0b8a0", marginBottom:8, lineHeight:1.6,
+              borderLeft:"2px solid #5a1a1a", paddingLeft:10
+            }}>
+              "{beat1.length > 90 ? beat1.slice(0,90) + "…" : beat1}"
+            </div>
+
+            <div style={{ fontFamily:"monospace", fontSize:10, color:"#7a4040",
+              marginBottom:12, wordBreak:"break-all" }}>
+              {sid}
+            </div>
+
+            {v.video_url && (
+              <a href={v.video_url} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                style={{
+                  display:"block", padding:"6px 12px", borderRadius:6,
+                  background:"#090202", border:"1px solid #3a0f0f",
+                  color:"#c07060", textDecoration:"none",
+                  fontFamily:"monospace", fontSize:10,
+                  wordBreak:"break-all", marginBottom:12, lineHeight:1.5
+                }}>
+                ▶ Watch video ↗
+              </a>
+            )}
+
+            <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
+              {!published && (
+                <button disabled={!!isActing} onClick={e => { e.stopPropagation(); handlePublishBoth(sid); }}
+                  style={smallBtn("#f0e0d0", "linear-gradient(135deg,#7a2010,#b83020)", !!isActing)}>
+                  {actionId === sid+"_pub" ? "Publishing…" : "▶ Publish Both"}
+                </button>
+              )}
+              <button disabled={!!isActing} onClick={e => { e.stopPropagation(); onReassemble(sid); }}
+                style={smallBtn("#d0e0f0", "linear-gradient(135deg,#102040,#1a4060)", !!isActing)}>
+                🔁 Re-assemble
+              </button>
+              <button disabled={!!isActing} onClick={e => { e.stopPropagation(); handleDelete(sid); }}
+                style={smallBtn("#f0d0d0", "linear-gradient(135deg,#5a0808,#8a1010)", !!isActing)}>
+                {actionId === sid+"_del" ? "Deleting…" : "🗑 Delete"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Render Wake Button ────────────────────────────────────────────────────────
+function RenderWakeButton({ onWakeLog }) {
+  const SLEEP_MS    = 15 * 60 * 1000;
+  const COUNTDOWN_S = 2 * 60;
+
+  const [waking, setWaking]       = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [sleepsIn, setSleepsIn]   = useState(null);
+  const timerRef                  = useRef(null);
+  const sleepRef                  = useRef(null);
+
+  function clearTimers() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (sleepRef.current) clearTimeout(sleepRef.current);
+  }
+
+  function startSleepCountdown() {
+    const wakeTime = Date.now();
+    sleepRef.current = setTimeout(() => setSleepsIn(null), SLEEP_MS);
+    timerRef.current = setInterval(() => {
+      const remaining = SLEEP_MS - (Date.now() - wakeTime);
+      if (remaining <= 0) { clearInterval(timerRef.current); setSleepsIn(null); }
+      else setSleepsIn(remaining);
+    }, 1000);
+  }
+
+  function startCountdown() {
+    setCountdown(COUNTDOWN_S);
+    const start = Date.now();
+    const tick = setInterval(() => {
+      const left = COUNTDOWN_S - Math.floor((Date.now() - start) / 1000);
+      if (left <= 0) { clearInterval(tick); setCountdown(null); }
+      else setCountdown(left);
+    }, 500);
+  }
+
+  async function handleWake() {
+    setWaking(true);
+    clearTimers();
+    setSleepsIn(SLEEP_MS);
+    try {
+      onWakeLog("Waking Render…", "step");
+      for (let i = 0; i < 10; i++) {
+        try {
+          const r = await fetch(`${RENDER}/`, { signal: AbortSignal.timeout(9000) });
+          if (r.ok) { onWakeLog("Render is awake ✓", "success"); break; }
+        } catch(e) {}
+        if (i < 9) { onWakeLog(`Not ready yet… attempt ${i+2}`, "info"); await new Promise(r => setTimeout(r, 8000)); }
+      }
+      startCountdown();
+      startSleepCountdown();
+    } catch(e) {
+      onWakeLog("Wake failed: " + e.message, "error");
+      setSleepsIn(null);
+    } finally { setWaking(false); }
+  }
+
+  useEffect(() => () => clearTimers(), []);
+
+  const isDisabled = waking || sleepsIn !== null;
+
+  function fmtMs(ms) {
+    const s = Math.ceil(ms / 1000);
+    const m = Math.floor(s / 60);
+    return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+  }
+
+  return (
+    <div style={{
+      maxWidth:680, margin:"0 auto 16px",
+      background:"#0a0202", border:"1px solid #2a0808",
+      borderTop:"2px solid #5a1010",
+      borderRadius:10, padding:"12px 16px",
+      display:"flex", alignItems:"center", gap:14, flexWrap:"wrap"
+    }}>
+      <button
+        disabled={isDisabled}
+        onClick={handleWake}
+        style={{
+          padding:"8px 20px", borderRadius:8, border:"none",
+          fontSize:13, fontWeight:700,
+          background: isDisabled
+            ? "#1a0505"
+            : "linear-gradient(135deg,#6a1010,#a01818)",
+          color: isDisabled ? "#3a1010" : "#ffd0c8",
+          cursor: isDisabled ? "not-allowed" : "pointer",
+          whiteSpace:"nowrap",
+          boxShadow: isDisabled ? "none" : "0 2px 12px rgba(160,24,24,0.35)"
+        }}>
+        {waking ? "Waking…" : "⚡ Wake Render"}
+      </button>
+
+      <div style={{ flex:1, minWidth:120 }}>
+        {countdown !== null && (
+          <div style={{ fontSize:12, color:"#4caf50" }}>
+            <span style={{ fontWeight:700 }}>Render warming up — {countdown}s</span>
+            {" "}<span style={{ color:"#2a5a2a", fontSize:11 }}>/ 2:00</span>
+          </div>
+        )}
+        {countdown === null && sleepsIn !== null && (
+          <div style={{ fontSize:11, color:"#7a4040" }}>
+            Render active — sleeps in {fmtMs(sleepsIn)}
+          </div>
+        )}
+        {countdown === null && sleepsIn === null && (
+          <div style={{ fontSize:11, color:"#4a1a1a" }}>
+            Render may be asleep. Wake before assembling.
+          </div>
+        )}
+      </div>
+
+      {sleepsIn !== null && countdown === null && (
+        <div style={{ width:8, height:8, borderRadius:"50%",
+          background:"#4caf50", flexShrink:0,
+          boxShadow:"0 0 6px #4caf50" }} />
+      )}
+      {countdown !== null && (
+        <div style={{ width:8, height:8, borderRadius:"50%",
+          background:"#c0392b", flexShrink:0,
+          animation:"pulse 1s infinite",
+          boxShadow:"0 0 6px #c0392b" }} />
+      )}
+    </div>
+  );
+}
+
+// ── Incomplete Jobs ───────────────────────────────────────────────────────────
+function IncompleteJobs({ onAssemble }) {
+  const [jobs, setJobs]           = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [open, setOpen]           = useState(false);
+  const [badgeCount, setBadgeCount] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch(`${RENDER}/videos/incomplete`, { headers: H });
+      const d = await r.json();
+      const list = d.incomplete || [];
+      setJobs(list);
+      setBadgeCount(list.length);
+    } catch(e) { console.error("incomplete error", e); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  if (!badgeCount) return null;
+
+  return (
+    <div style={{
+      marginTop:20, borderRadius:8,
+      border:"1px solid #4a1508", background:"#0b0303", overflow:"hidden"
+    }}>
+      <button onClick={() => { setOpen(o => !o); if (!open) load(); }}
+        style={{
+          width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"11px 16px", background:"none", border:"none", cursor:"pointer"
+        }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:15 }}>⚠️</span>
+          <span style={{ fontSize:13, fontWeight:700, color:"#c06040" }}>Incomplete Jobs</span>
+          <span style={{
+            padding:"2px 9px", borderRadius:10, fontSize:11, fontWeight:700,
+            background:"#2a0e05", color:"#e07040", border:"1px solid #5a2010"
+          }}>{badgeCount}</span>
+        </div>
+        <span style={{ color:"#b06050", fontSize:13 }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div style={{ borderTop:"1px solid #2a0a05", padding:"12px 16px" }}>
+          <div style={{ fontSize:11, color:"#b06050", marginBottom:12 }}>
+            Voice and image are ready but assembly never finished. Click Assemble to retry.
+          </div>
+          {jobs.map(j => {
+            const sid = j.script_id;
+            const beat1 = j.googalji_scripts?.beat1 || j.googalji_scripts?.raw_topic || "—";
+            return (
+              <div key={sid} style={{
+                background:"#090202", borderRadius:7,
+                border:"1px solid #2a0808", padding:"10px 12px", marginBottom:8
+              }}>
+                <div className="deva" style={{
+                  fontSize:12, color:"#e0b8a0", marginBottom:6,
+                  borderLeft:"2px solid #3a1010", paddingLeft:8, lineHeight:1.5
+                }}>
+                  "{beat1.length > 80 ? beat1.slice(0,80)+"…" : beat1}"
+                </div>
+                <div style={{ fontFamily:"monospace", fontSize:10, color:"#6a3030",
+                  marginBottom:8, wordBreak:"break-all" }}>{sid}</div>
+                <div style={{ display:"flex", gap:7, alignItems:"center" }}>
+                  <span style={{
+                    fontSize:10, padding:"2px 7px", borderRadius:4,
+                    background: j.voice_file_url ? "#080f08" : "#100404",
+                    color: j.voice_file_url ? "#4caf50" : "#c05050",
+                    border:`1px solid ${j.voice_file_url ? "#1a3a1a" : "#3a1010"}`
+                  }}>🎙 {j.voice_file_url ? "Voice ✓" : "Missing"}</span>
+                  <span style={{
+                    fontSize:10, padding:"2px 7px", borderRadius:4,
+                    background: j.image_url ? "#080f08" : "#100404",
+                    color: j.image_url ? "#4caf50" : "#c05050",
+                    border:`1px solid ${j.image_url ? "#1a3a1a" : "#3a1010"}`
+                  }}>🖼 {j.image_url ? "Image ✓" : "Missing"}</span>
+                  <div style={{ flex:1 }} />
+                  <button onClick={() => onAssemble(sid)} style={{
+                    padding:"5px 14px", borderRadius:6, border:"none",
+                    fontSize:11, fontWeight:700,
+                    background:"linear-gradient(135deg,#7a1a1a,#b02020)",
+                    color:"#f0d0d0", cursor:"pointer"
+                  }}>🔁 Assemble</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App() {
+  const { logs, add, clear } = useLog();
+  const [tab, setTab]               = useState("pipeline");
+  const [status, setStatus]         = useState("idle");
+  const [busy, setBusy]             = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [assembled, setAssembled]   = useState(null);
+
+  const [showAssemble, setShowAssemble] = useState(false);
+  const [assembleMode, setAssembleMode] = useState("new");
+  const [aCategory, setACategory]       = useState("B");
+  const [aScriptId, setAScriptId]       = useState("");
+
+  const [showFull, setShowFull]   = useState(false);
+  const [fCategory, setFCategory] = useState("B");
+  const [videosKey, setVideosKey] = useState(0);
+
+  function handleReassemble(scriptId) {
+    setTab("pipeline");
+    setAssembleMode("old");
+    setAScriptId(scriptId);
+    setShowAssemble(true);
+  }
+
+  async function runAssemble() {
+    setShowAssemble(false);
+    setBusy(true); setStatus("running"); clear();
+    try {
+      let sid = aScriptId.trim();
+      if (assembleMode === "new") {
+        sid = await callCouncil(aCategory, add);
+        await callVoiceAndImage(sid, add);
+      } else {
+        if (!sid) throw new Error("Paste a script ID first");
+        add(`Using existing script: ${sid}`, "id");
+      }
+      await wakeRender(add);
+      const videoUrl = await callAssemble(sid, add, (s, u) => {
+        setAssembled({ sid: s, url: u, published: false });
+        setVideosKey(k => k + 1);
+      });
+      setStatus(videoUrl ? "success" : "error");
+      if (videoUrl) add("✓ Video ready — link below.", "success");
+    } catch(e) {
+      add(`Error: ${e.message}`, "error");
+      setStatus("error");
+    } finally { setBusy(false); }
+  }
+
+  async function runFull() {
+    setShowFull(false);
+    setBusy(true); setStatus("running"); clear();
+    try {
+      const sid = await callCouncil(fCategory, add);
+      await callVoiceAndImage(sid, add);
+      await wakeRender(add);
+      const videoUrl = await callAssemble(sid, add, (s, u) => {
+        setAssembled({ sid: s, url: u, published: false });
+      });
+      if (videoUrl) {
+        add("Waiting 5s before publish…", "info");
+        await new Promise(res => setTimeout(res, 5000));
+        try { await callPublish(sid, add); } catch(e) { add("YouTube fail: " + e.message, "error"); }
+        try { await callPublishInstagram(sid, add); } catch(e) { add("Instagram fail: " + e.message, "error"); }
+        setAssembled(a => a ? { ...a, published: true } : a);
+        setStatus("success");
+        add("Pipeline complete ✓", "success");
+        setVideosKey(k => k + 1);
+      } else {
+        setStatus("error");
+      }
+    } catch(e) {
+      add(`Error: ${e.message}`, "error");
+      setStatus("error");
+    } finally { setBusy(false); }
+  }
+
+  // ── Styles ──────────────────────────────────────────────────────────────────
+  const cardStyle = {
+    background:"#0d0303", border:"1px solid #4a1515",
+    borderTop:"3px solid #8b2020", borderRadius:12, padding:26,
+    textAlign:"center", flex:"1 1 200px", maxWidth:240,
+    position:"relative", overflow:"hidden"
+  };
+
+  const primaryBtn = (disabled) => ({
+    padding:"11px 24px", borderRadius:9, border:"none",
+    fontSize:14, fontWeight:700,
+    background: disabled ? "#1a0505" : "linear-gradient(135deg, #7a1a1a, #b82020)",
+    color: disabled ? "#2a0808" : "#f0d8d0",
+    cursor: disabled ? "not-allowed" : "pointer",
+    boxShadow: disabled ? "none" : "0 2px 20px rgba(180,20,20,0.3)",
+    width:"100%"
+  });
+
+  const deepRedBtn = (disabled) => ({
+    padding:"11px 24px", borderRadius:9, border:"none",
+    fontSize:14, fontWeight:700,
+    background: disabled ? "#1a0505" : "linear-gradient(135deg, #4a0a0a, #8a1010)",
+    color: disabled ? "#2a0808" : "#ffc8c8",
+    cursor: disabled ? "not-allowed" : "pointer",
+    boxShadow: disabled ? "none" : "0 2px 20px rgba(140,10,10,0.4)",
+    width:"100%"
+  });
+
+  const toggleBtn = (active) => ({
+    flex:1, padding:"8px 0", borderRadius:7, border:"none",
+    fontSize:12, cursor:"pointer",
+    background: active ? "#6a1010" : "#100303",
+    color: active ? "#f0d0c0" : "#7a2020",
+    fontWeight: active ? 700 : 400
+  });
+
+  const tabBtn = (active) => ({
+    padding:"9px 24px", borderRadius:"7px 7px 0 0", border:"none",
+    fontSize:13, cursor:"pointer",
+    background: active ? "#0d0303" : "transparent",
+    color: active ? "#e05050" : "#5a1a1a",
+    fontWeight: active ? 700 : 400,
+    borderBottom: active ? "2px solid #c0392b" : "2px solid transparent",
+  });
+
+  return (
+    <div style={{
+      minHeight:"100vh", padding:"40px 20px",
+      background:`
+        radial-gradient(ellipse at 10% 10%, rgba(160,20,20,0.10) 0%, transparent 50%),
+        radial-gradient(ellipse at 90% 90%, rgba(120,10,10,0.07) 0%, transparent 50%),
+        #0d0505
+      `
+    }}>
+
+      {/* Header */}
+      <div style={{ textAlign:"center", marginBottom:36 }}>
+        {/* Lal Kitab decorative line */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:12, marginBottom:16 }}>
+          <div style={{ height:1, width:60, background:"linear-gradient(90deg, transparent, #8b2020)" }} />
+          <div style={{ width:6, height:6, background:"#c0392b", borderRadius:"50%", boxShadow:"0 0 8px #c0392b" }} />
+          <div style={{ height:1, width:60, background:"linear-gradient(90deg, #8b2020, transparent)" }} />
+        </div>
+
+        <div style={{
+          fontSize:10, letterSpacing:"0.4em", color:"#c07060",
+          textTransform:"uppercase", marginBottom:8
+        }}>
+          Automated Pipeline
+        </div>
+
+        <div style={{
+          fontSize:40, fontWeight:700, color:"#e85050",
+          letterSpacing:"0.04em", animation:"flicker 8s infinite",
+          textShadow:"0 2px 30px rgba(200,40,40,0.3)"
+        }}>
+          Googalji
+        </div>
+
+        <div style={{
+          fontSize:14, color:"#d08060", marginTop:6,
+          letterSpacing:"0.06em", fontStyle:"italic"
+        }}>
+          Numbers ne bataya tha.
+        </div>
+
+        <div style={{ marginTop:16 }}>
+          <StatusPill status={status} />
+        </div>
+      </div>
+
+      {/* Render wake button */}
+      <RenderWakeButton onWakeLog={add} />
+
+      {/* Tabs */}
+      <div style={{
+        maxWidth:680, margin:"0 auto", display:"flex", gap:4,
+        borderBottom:"1px solid #2a0808"
+      }}>
+        <button style={tabBtn(tab==="pipeline")} onClick={() => setTab("pipeline")}>
+          ⚙ Pipeline
+        </button>
+        <button style={tabBtn(tab==="videos")} onClick={() => setTab("videos")}>
+          📼 Videos
+        </button>
+      </div>
+
+      <div style={{
+        maxWidth:680, margin:"0 auto",
+        background:"#0a0202", border:"1px solid #1a0505",
+        borderTop:"none", borderRadius:"0 0 10px 10px",
+        padding:"28px 20px 20px", marginBottom:24
+      }}>
+
+        {/* ── Pipeline Tab ── */}
+        {tab === "pipeline" && (
+          <>
+            <div style={{
+              display:"flex", gap:20, justifyContent:"center",
+              marginBottom:assembled ? 28 : 0, flexWrap:"wrap"
+            }}>
+              {/* Assemble card */}
+              <div style={cardStyle}>
+                <div style={{
+                  fontSize:30, marginBottom:12,
+                  filter:"drop-shadow(0 0 8px rgba(200,40,40,0.4))"
+                }}>📖</div>
+                <div style={{ fontSize:16, fontWeight:700, color:"#e85050", marginBottom:6 }}>
+                  Assemble
+                </div>
+                <div style={{
+                  fontSize:11, color:"#c07060", marginBottom:4, lineHeight:1.6
+                }}>
+                  Build video, no publish.
+                </div>
+                <div style={{ fontSize:11, color:"#b06050", marginBottom:20, lineHeight:1.6 }}>
+                  Review in Videos tab.
+                </div>
+                <button disabled={busy} onClick={() => setShowAssemble(true)} style={primaryBtn(busy)}>
+                  {busy ? "Running…" : "Assemble Video"}
+                </button>
+              </div>
+
+              {/* Full pipeline card */}
+              <div style={cardStyle}>
+                <div style={{
+                  fontSize:30, marginBottom:12,
+                  filter:"drop-shadow(0 0 8px rgba(200,40,40,0.4))"
+                }}>🕉</div>
+                <div style={{ fontSize:16, fontWeight:700, color:"#e85050", marginBottom:6 }}>
+                  Full Pipeline
+                </div>
+                <div style={{
+                  fontSize:11, color:"#c07060", marginBottom:4, lineHeight:1.6
+                }}>
+                  Script → Voice → Image
+                </div>
+                <div style={{ fontSize:11, color:"#b06050", marginBottom:20, lineHeight:1.6 }}>
+                  → Video → Publish both.
+                </div>
+                <button disabled={busy} onClick={() => setShowFull(true)} style={deepRedBtn(busy)}>
+                  {busy ? "Running…" : "Generate & Publish"}
+                </button>
+              </div>
+            </div>
+
+            {/* Last assembled */}
+            {assembled && (
+              <div style={{
+                marginTop:24, background:"#0d0303",
+                border: assembled.published ? "1px solid #1a3010" : "1px solid #7a1a1a",
+                borderTop: assembled.published ? "2px solid #2a5020" : "2px solid #c0392b",
+                borderRadius:10, padding:22, animation:"fadein 0.3s ease",
+                boxShadow: assembled.published ? "none" : "0 0 28px rgba(180,20,20,0.12)"
+              }}>
+                <div style={{
+                  display:"flex", justifyContent:"space-between",
+                  alignItems:"center", marginBottom:14
+                }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#e85050" }}>
+                    {assembled.published ? "✓ Published" : "📖 Video Ready"}
+                  </div>
+                  <button onClick={() => setAssembled(null)} style={{
+                    background:"none", border:"none", color:"#4a1010",
+                    fontSize:18, cursor:"pointer", lineHeight:1
+                  }}>✕</button>
+                </div>
+
+                <a href={assembled.url} target="_blank" rel="noopener noreferrer"
+                  style={{
+                    display:"flex", alignItems:"center", gap:10, padding:"11px 16px",
+                    borderRadius:8, background:"#080101", border:"1px solid #5a1010",
+                    color:"#e85050", textDecoration:"none", marginBottom:14,
+                    fontSize:13, fontWeight:700
+                  }}>
+                  <span style={{ fontSize:16 }}>▶</span>
+                  <span>Watch video ↗</span>
+                </a>
+
+                <div style={{
+                  fontFamily:"monospace", fontSize:10, color:"#2a0808",
+                  marginBottom:14, wordBreak:"break-all"
+                }}>
+                  {assembled.sid}
+                </div>
+
+                {!assembled.published && (
+                  <button disabled={publishing} onClick={async () => {
+                      setPublishing(true);
+                      try {
+                        await wakeAndPublishBoth(assembled.sid, add);
+                        setAssembled(a => ({...a, published:true}));
+                        setVideosKey(k => k+1);
+                      } catch(e) { add("Publish failed: "+e.message, "error"); }
+                      finally { setPublishing(false); }
+                    }}
+                    style={{
+                      width:"100%", padding:"12px 0", borderRadius:8, border:"none",
+                      fontSize:14, fontWeight:700,
+                      cursor: publishing ? "not-allowed" : "pointer",
+                      background: publishing ? "#1a0505"
+                        : "linear-gradient(135deg,#7a1010,#b82020)",
+                      color: publishing ? "#2a0808" : "#f0d0d0",
+                      boxShadow: publishing ? "none" : "0 2px 20px rgba(180,20,20,0.25)"
+                    }}>
+                    {publishing
+                      ? "Publishing to YouTube then Instagram…"
+                      : "▶ Publish to YouTube + Instagram"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <IncompleteJobs onAssemble={handleReassemble} />
+          </>
+        )}
+
+        {tab === "videos" && (
+          <VideosTab key={videosKey} onReassemble={handleReassemble} pipelineAdd={add} />
+        )}
+      </div>
+
+      {/* Console */}
+      <LogConsole logs={logs} onClear={clear} />
+
+      {/* ── Assemble Modal ── */}
+      <Modal show={showAssemble} title="Assemble Video" subtitle="New script or existing ID"
+        icon="📖" onClose={() => setShowAssemble(false)}>
+        <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+          <button style={toggleBtn(assembleMode==="new")}
+            onClick={() => setAssembleMode("new")}>New Script</button>
+          <button style={toggleBtn(assembleMode==="old")}
+            onClick={() => setAssembleMode("old")}>Existing ID</button>
+        </div>
+        {assembleMode === "new" && (
+          <div style={{ marginBottom:20 }}>
+            <CatPicker value={aCategory} onChange={setACategory} />
+          </div>
+        )}
+        {assembleMode === "old" && (
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:10, letterSpacing:"0.2em", color:"#d08060",
+              textTransform:"uppercase", marginBottom:8 }}>Script ID</div>
+            <input value={aScriptId} onChange={e => setAScriptId(e.target.value)}
+              placeholder="paste UUID here…"
+              style={{
+                width:"100%", padding:"10px 14px", background:"#080101",
+                border:"1px solid #5a1a1a", borderRadius:7, color:"#f0d0c0",
+                fontFamily:"monospace", fontSize:12, outline:"none"
+              }} />
+            <div style={{ fontSize:11, color:"#c07060", marginTop:5 }}>
+              Voice + image must already exist for this ID.
+            </div>
+          </div>
+        )}
+        <button onClick={runAssemble} style={primaryBtn(false)}>
+          {assembleMode === "new" ? "Generate + Assemble" : "Assemble This ID"}
+        </button>
+      </Modal>
+
+      {/* ── Full Pipeline Modal ── */}
+      <Modal show={showFull} title="Generate & Publish" subtitle="Full pipeline in one run"
+        icon="🕉" onClose={() => setShowFull(false)}>
+        <div style={{ marginBottom:20 }}>
+          <CatPicker value={fCategory} onChange={setFCategory} />
+        </div>
+        <div style={{
+          fontSize:12, color:"#c87060", marginBottom:20, lineHeight:1.8,
+          padding:"12px 14px", background:"#080101", borderRadius:7,
+          border:"1px solid #2a0808"
+        }}>
+          Council → Voice + Image → Assembly → YouTube + Instagram.<br/>
+          Takes 3–5 minutes. Keep this tab open.
+        </div>
+        <button onClick={runFull} style={deepRedBtn(false)}>
+          Run Full Pipeline
+        </button>
+      </Modal>
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
