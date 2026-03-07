@@ -18,7 +18,6 @@ const CORS_HEADERS = {
 // Thick-framed glasses, slightly crooked. Warm aesthetic background.
 // Old wooden desk, worn notebooks, loose papers.
 // Single lamp, warm golden light.
-// Small steel glass of chai always present. Sometimes held. Never sipped on camera.
 const CHARACTER_BASE_PROMPT = `An elderly Indian man, late 60s to early 70s, upright regal posture,
 extremely handsome fair-complexioned glowing face, well-groomed white beard, calm commanding expression,
 wearing an extremely expensive premium silk bandhgala high-collar kurta like Indian Prime Minister Modi — pure white, immaculate, perfectly fitted, rich fabric with fine texture,
@@ -34,9 +33,9 @@ hyper-realistic ultra-detailed photorealistic portrait, sharp focus on face and 
 cinematic sacred golden lighting, 8K detail, editorial quality, 9:16 vertical format`;
 
 const PROP_ADDITIONS = {
-  chai: ", a small steel glass of chai held loosely in one hand, faint steam rising",
-  notebook: ", an open worn notebook visible on the desk in front of him, pencil resting across the page",
-  glasses: ", adjusting his thick-framed reading glasses with one finger",
+  notebook: ", writing slowly in an open worn notebook with a wooden pen, focused downward",
+  book: ", holding a thick red leather-bound book in one hand, slightly open, other hand resting on desk",
+  glasses: ", adjusting his thick-framed reading glasses with one finger, mid-thought",
   none: ""
 };
 
