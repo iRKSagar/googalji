@@ -1,0 +1,13 @@
+name = "googalji-voice"
+main = "googalji-voice.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+WORKER_DOMAIN = "googalji-voice.YOUR_SUBDOMAIN.workers.dev"
+
+# Secrets — set via: wrangler secret put SECRET_NAME
+# COUNCIL_SECRET
+# ELEVENLABS_API_KEY
+# GOOGALJI_VOICE_ID
+# SUPABASE_URL
+# SUPABASE_KEY
