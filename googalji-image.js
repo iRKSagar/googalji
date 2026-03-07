@@ -19,18 +19,19 @@ const CORS_HEADERS = {
 // Old wooden desk, worn notebooks, loose papers.
 // Single lamp, warm golden light.
 // Small steel glass of chai always present. Sometimes held. Never sipped on camera.
-const CHARACTER_BASE_PROMPT = `An elderly Indian man, late 60s to early 70s, upright dignified posture,
-charming glowing face with deep laugh lines, calm and knowing expression,
-warm golden-brown Indian skin tone, thick-framed reading glasses slightly crooked on his nose,
-wearing an immaculate white Modi-style high-collar kurta,
-rudraksha mala beads around his neck, multiple astrological rings on fingers in gold and silver,
-red kumkum tika on forehead, subtle holy thread visible,
-old wooden desk in background with worn notebooks worn leather-bound books and brass items stacked around him,
-warm golden oil lamp light from the side casting a sacred glow on his face,
-aesthetically rich background — deep crimson and amber tones, ancient Indian study room feel,
-expression patient and slightly amused, he already knows,
-ultra-detailed photorealistic portrait, sharp focus on face and upper body,
-cinematic warm golden lighting, 8K detail, 9:16 vertical format`;
+const CHARACTER_BASE_PROMPT = `An elderly Indian man, late 60s to early 70s, upright regal posture,
+extremely handsome fair-complexioned glowing face, well-groomed white beard, calm commanding expression,
+wearing an extremely expensive premium silk bandhgala high-collar kurta like Indian Prime Minister Modi — pure white, immaculate, perfectly fitted, rich fabric with fine texture,
+thick-framed reading glasses slightly crooked on his nose,
+bold red and saffron kumkum tilak on forehead,
+heavy gold rudraksha mala around neck, thick gold chain,
+multiple thick gold astrological rings on every finger, gold kada bracelet on wrist,
+old carved wooden desk in background with ancient leather-bound scriptures brass oil lamp and copper vessels,
+single brass diya oil lamp casting warm sacred golden glow across his face,
+aesthetically opulent background — deep burgundy silk curtains amber candlelight ancient stone or carved wood temple-like study,
+expression of quiet divine authority — a man who speaks once,
+hyper-realistic ultra-detailed photorealistic portrait, sharp focus on face and jewellery,
+cinematic sacred golden lighting, 8K detail, editorial quality, 9:16 vertical format`;
 
 const PROP_ADDITIONS = {
   chai: ", a small steel glass of chai held loosely in one hand, faint steam rising",
@@ -114,7 +115,7 @@ async function initiateImageGeneration(leonardoKey, prompt, initImageId) {
   const body = {
     modelId: LEONARDO_MODEL_ID,
     prompt: prompt,
-    negative_prompt: "cartoon, anime, childish, ugly, deformed, blurry, low quality, casual clothing, t-shirt, jeans, logos, branded clothing, smiling broadly, angry, surprised, young, female, western clothing, different person, different face, phone, computer, mobile, laptop, modern objects, clean desk, bright office, bald, no glasses, no tika, no rudraksha",
+    negative_prompt: "cartoon, anime, childish, ugly, deformed, blurry, low quality, casual clothing, t-shirt, jeans, plain kurta, cheap fabric, logos, branded clothing, smiling broadly, angry, surprised, young, female, western clothing, different person, different face, dark skin, phone, computer, mobile, laptop, modern objects, clean office, fluorescent light, bald, no glasses, no tilak, no rudraksha, no gold jewellery, silver jewellery only, poor background",
     num_images: 1,
     width: 576,
     height: 1024,
