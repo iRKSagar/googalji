@@ -1,0 +1,13 @@
+name = "googalji-image"
+main = "googalji-image.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+WORKER_DOMAIN = "googalji-image.YOUR_SUBDOMAIN.workers.dev"
+
+# Secrets — set via: wrangler secret put SECRET_NAME
+# COUNCIL_SECRET
+# LEONARDO_API_KEY
+# REFERENCE_IMAGE_URL   (set after first 3-5 generations — pick best, paste URL here)
+# SUPABASE_URL
+# SUPABASE_KEY
