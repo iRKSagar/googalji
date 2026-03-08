@@ -112,10 +112,10 @@ const H = { "Authorization": `Bearer ${BEARER}`, "Content-Type": "application/js
 // Daily fixed (4 horoscope groups) + rotating (8 categories)
 const CATS = ["H1","H2","H3","H4","G","N","D","K","L","W","R","B"];
 const CAT_LABELS = {
-  H1: "Rashi — Mesh, Vrishabh, Mithun",
-  H2: "Rashi — Kark, Singh, Kanya",
-  H3: "Rashi — Tula, Vrishchik, Dhanu",
-  H4: "Rashi — Makar, Kumbh, Meen",
+  H1: "Rashi: Mesh, Vrishabh, Mithun",
+  H2: "Rashi: Kark, Singh, Kanya",
+  H3: "Rashi: Tula, Vrishchik, Dhanu",
+  H4: "Rashi: Makar, Kumbh, Meen",
   G:  "Graha Spotlight",
   N:  "Nakshatra Insight",
   D:  "Dasha & Antardasha",
@@ -299,7 +299,7 @@ function CatPicker({ value, onChange }) {
           </button>
         ))}
       </div>
-    </div
+    </div>
   );
 }
 
@@ -1021,11 +1021,7 @@ function App() {
   return (
     <div style={{
       minHeight:"100vh", padding:"40px 20px",
-      background:`
-        radial-gradient(ellipse at 10% 10%, rgba(160,20,20,0.10) 0%, transparent 50%),
-        radial-gradient(ellipse at 90% 90%, rgba(120,10,10,0.07) 0%, transparent 50%),
-        #0d0505
-      `
+      background:"radial-gradient(ellipse at 10% 10%, rgba(160,20,20,0.10) 0%, transparent 50%), radial-gradient(ellipse at 90% 90%, rgba(120,10,10,0.07) 0%, transparent 50%), #0d0505"
     }}>
 
       {/* Header */}
@@ -1276,7 +1272,22 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e.message }; }
+  render() {
+    if (this.state.error) {
+      return React.createElement('div', {
+        style: { color:'#f88', padding:40, fontFamily:'monospace', fontSize:13, whiteSpace:'pre-wrap' }
+      }, 'Render error:\n' + this.state.error);
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  React.createElement(ErrorBoundary, null, React.createElement(App))
+);
 </script>
 </body>
 </html>
