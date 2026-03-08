@@ -2,9 +2,9 @@ services:
   - type: web
     name: googalji-assembly
     runtime: python
-    plan: starter          # paid tier — $7/month, no sleep
-    buildCommand: pip install flask moviepy Pillow numpy requests
-    startCommand: python googalji-assembly.py
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT googalji-assembly:app
     envVars:
       - key: SUPABASE_URL
         sync: false
