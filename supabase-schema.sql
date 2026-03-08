@@ -68,3 +68,8 @@ CREATE INDEX idx_googalji_scripts_published ON googalji_scripts(published, creat
 CREATE INDEX idx_googalji_scripts_category  ON googalji_scripts(category);
 CREATE INDEX idx_googalji_videos_script_id  ON googalji_videos(script_id);
 CREATE INDEX idx_googalji_topics_used       ON googalji_topics(used, blacklist_cleared, engagement_score DESC);
+
+-- ── Add Jyotish columns to existing scripts table ────────────────────────────
+-- Run this if you already created the table without these columns
+ALTER TABLE googalji_scripts ADD COLUMN IF NOT EXISTS jyotish_element text;
+ALTER TABLE googalji_scripts ADD COLUMN IF NOT EXISTS overlay_symbol text;
