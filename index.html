@@ -109,14 +109,21 @@ const IMAGE   = "https://googalji-image.panditgoogalji.workers.dev/";
 const RENDER  = "https://googalji.onrender.com";
 
 const H = { "Authorization": `Bearer ${BEARER}`, "Content-Type": "application/json" };
-const CATS = ["A","B","C","D","E","F"];
+// Daily fixed (4 horoscope groups) + rotating (8 categories)
+const CATS = ["H1","H2","H3","H4","G","N","D","K","L","W","R","B"];
 const CAT_LABELS = {
-  A: "Date Energy",
-  B: "Birth Number",
-  C: "Name Number",
-  D: "Year Number",
-  E: "Number Pattern",
-  F: "Contrast & Gap"
+  H1: "Rashi — Mesh, Vrishabh, Mithun",
+  H2: "Rashi — Kark, Singh, Kanya",
+  H3: "Rashi — Tula, Vrishchik, Dhanu",
+  H4: "Rashi — Makar, Kumbh, Meen",
+  G:  "Graha Spotlight",
+  N:  "Nakshatra Insight",
+  D:  "Dasha & Antardasha",
+  K:  "Kundali Yoga & Dosh",
+  L:  "Love & Rishta",
+  W:  "Weekly Spotlight",
+  R:  "Lal Kitab Remedy",
+  B:  "Birth Number + Graha"
 };
 
 // ── Log hook ──────────────────────────────────────────────────────────────────
@@ -258,29 +265,41 @@ function Modal({ show, title, subtitle, icon, onClose, children }) {
 }
 
 // ── Category Picker ────────────────────────────────────────────────────────────
+const HOROSCOPE_CATS = ["H1","H2","H3","H4"];
+const ROTATING_CATS  = ["G","N","D","K","L","W","R","B"];
+
 function CatPicker({ value, onChange }) {
+  const btn = (c, active, colorSet) => ({
+    padding:"6px 11px", borderRadius:7, border:"none", cursor:"pointer",
+    fontFamily:"'Crimson Pro', Georgia, serif", fontSize:11,
+    background: active ? colorSet.activeBg : colorSet.bg,
+    color: active ? colorSet.activeColor : colorSet.color,
+    fontWeight: active ? 700 : 400,
+    outline: active ? `1px solid ${colorSet.border}` : "1px solid transparent"
+  });
+
+  const horoColors = { bg:"#120303", activeBg:"#3a0808", color:"#7a3030", activeColor:"#ffc8b0", border:"#c03030" };
+  const rotColors  = { bg:"#0d0903", activeBg:"#2a1a05", color:"#6a4020", activeColor:"#ffd898", border:"#a06020" };
+
   return (
     <div>
-      <div style={{
-        fontSize:10, letterSpacing:"0.2em", color:"#d08060",
-        textTransform:"uppercase", marginBottom:10
-      }}>Category</div>
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-        {CATS.map(c => (
-          <button key={c} onClick={() => onChange(c)} style={{
-            padding:"7px 14px", borderRadius:7,
-            border: value===c ? "1px solid #c0392b" : "1px solid #2a0a0a",
-            fontFamily:"'Crimson Pro', Georgia, serif", fontSize:12, cursor:"pointer",
-            background: value===c ? "#3a0a0a" : "#120303",
-            color: value===c ? "#f0c0a0" : "#7a3030",
-            fontWeight: value===c ? 700 : 400
-          }}>
-            <span style={{ color: value===c ? "#c0392b" : "#5a2020" }}>{c}</span>
-            {" "}{CAT_LABELS[c]}
+      <div style={{ fontSize:10, letterSpacing:"0.2em", color:"#c05040", textTransform:"uppercase", marginBottom:8 }}>Daily Horoscope</div>
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:14 }}>
+        {HOROSCOPE_CATS.map(c => (
+          <button key={c} onClick={() => onChange(c)} style={btn(c, value===c, horoColors)}>
+            <span style={{ opacity:0.6, marginRight:4 }}>{c}</span>{CAT_LABELS[c]}
           </button>
         ))}
       </div>
-    </div>
+      <div style={{ fontSize:10, letterSpacing:"0.2em", color:"#a06030", textTransform:"uppercase", marginBottom:8 }}>Jyotish Content</div>
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+        {ROTATING_CATS.map(c => (
+          <button key={c} onClick={() => onChange(c)} style={btn(c, value===c, rotColors)}>
+            <span style={{ opacity:0.6, marginRight:4 }}>{c}</span>{CAT_LABELS[c]}
+          </button>
+        ))}
+      </div>
+    </div
   );
 }
 
@@ -299,7 +318,7 @@ async function wakeRender(add) {
 }
 
 async function callCouncil(category, add) {
-  add(`Calling council (${category}: ${CAT_LABELS[category]})…`, "step");
+  add(`Calling council — ${category}: ${CAT_LABELS[category] || category}…`, "step");
   const r = await fetch(COUNCIL, {
     method:"POST", headers:H,
     body: JSON.stringify({ category })
