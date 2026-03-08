@@ -501,6 +501,42 @@ def render_caption_image(text, video_width, panel_h):
     return np.array(img)
 
 
+def render_lal_kitab_panel(video_width, panel_h):
+    """Procedural Lal Kitab border panel — deep crimson frame, semi-transparent center.
+    No asset required. Always renders. Returns RGBA numpy array."""
+    img = PIL.Image.new('RGBA', (video_width, panel_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    border_w = 14
+
+    # Semi-transparent dark center — text reads over it
+    cx0, cy0 = border_w, border_w
+    cx1, cy1 = video_width - border_w, panel_h - border_w
+    draw.rectangle([cx0, cy0, cx1, cy1], fill=(10, 2, 2, 210))
+
+    # Outer border — deep crimson
+    for i in range(border_w):
+        ratio = i / border_w
+        r = int(120 + 40 * ratio)
+        g = int(8 * (1 - ratio))
+        b = int(8 * (1 - ratio))
+        a = int(255 * (1 - ratio * 0.3))
+        draw.rectangle([i, i, video_width - i - 1, panel_h - i - 1], outline=(r, g, b, a))
+
+    # Corner ornament dots
+    dot_r = 5
+    corners = [(border_w + 6, border_w + 6), (video_width - border_w - 6, border_w + 6),
+               (border_w + 6, panel_h - border_w - 6), (video_width - border_w - 6, panel_h - border_w - 6)]
+    for cx, cy in corners:
+        draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=(180, 30, 30, 230))
+
+    # Top divider line — single crimson rule
+    rule_y = border_w + 2
+    draw.line([(border_w + 20, rule_y), (video_width - border_w - 20, rule_y)], fill=(160, 30, 20, 180), width=1)
+
+    return np.array(img)
+
+
 def build_caption_panel(video_width, video_height, duration, leather_path=None):
     """Parchment panel at bottom of frame during voice."""
     from moviepy.editor import ColorClip, ImageClip
@@ -516,12 +552,12 @@ def build_caption_panel(video_width, video_height, duration, leather_path=None):
                           .set_duration(duration))
             return [panel_clip]
 
-    # Fallback — Lal Kitab dark red panel
-    base = (ColorClip(size=(video_width, panel_h), color=(35, 5, 5))
-            .set_opacity(0.88)
-            .set_position((0, panel_y))
-            .set_duration(duration))
-    return [base]
+    # Fallback — procedural Lal Kitab border (always renders)
+    arr = render_lal_kitab_panel(video_width, panel_h)
+    panel_clip = (ImageClip(arr, ismask=False)
+                  .set_position((0, panel_y))
+                  .set_duration(duration))
+    return [panel_clip]
 
 
 def build_caption_clips(beat1_text, beats, voice_duration, video_width, video_height):
@@ -713,7 +749,7 @@ def assemble_video(image_path, audio_path, beats, output_path, beat1_text=None,
         # Apply warm amber overlay — 8% opacity, lamp-lit feel
         return apply_amber_overlay(np.array(frame), opacity=0.08)
 
-    image_clip = VideoClip(make_frame, duration=total_duration)
+    image_clip = VideoClip(make_frame, duration=total_duration).set_fps(24)
 
     # ── Panel + captions — only during voice ────────────────────────────────
     panel_layers = build_caption_panel(target_width, target_height, voice_duration, leather_path=leather_panel_path)
