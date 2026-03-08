@@ -39,11 +39,11 @@ async function generateAudio(elevenLabsKey, voiceId, text) {
       text: text,
       model_id: 'eleven_v3',
       voice_settings: {
-        stability: 0.88,
-        similarity_boost: 0.90,
-        style: 0.08,
+        stability: 0.82,        // Slightly lower — allows natural variation in flat delivery
+        similarity_boost: 0.90, // Keep high — stay true to the voice
+        style: 0.12,            // Slightly more — lets the dryness come through
         use_speaker_boost: true,
-        speed: 0.79          // Googalji does not rush
+        speed: 0.87             // Slower — Googalji does not rush
       }
     })
   });
